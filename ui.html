@@ -1,0 +1,142 @@
+<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Bulk Maker Panel</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root{--bg:#0a0c10;--card:#12151c;--card2:#181c25;--line:#232836;--tx:#e7eaf0;--mut:#8a93a6;--acc:#5b8cff;--g:#22c55e;--r:#ef4444;--y:#f59e0b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.4 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",system-ui,sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:12px 18px;background:rgba(10,12,16,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.2px}.pill{font-size:11px;padding:3px 8px;border-radius:99px;background:var(--card2);color:var(--mut);border:1px solid var(--line)}
+.pill.dry{background:#3b2a05;color:var(--y);border-color:#5c4209}.pill.live{background:#06281a;color:var(--g);border-color:#0b4a2f}
+main{max-width:1400px;margin:0 auto;padding:14px 18px 40px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr) 380px}
+@media(max-width:1000px){main{grid-template-columns:minmax(0,1fr);padding:10px}.side{order:-1}.stats{order:-2}.banner{order:-3}.chart{height:280px}header h1{font-size:14px}}
+@media(max-width:520px){.stats{grid-template-columns:1fr 1fr}.stat .v{font-size:16px}#clock{display:none}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--mut);margin:0 0 10px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;grid-column:1/-1}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px}.stat .k{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px}.stat .v{font-size:19px;font-weight:650;margin-top:3px;font-variant-numeric:tabular-nums}.stat .s{font-size:11px;color:var(--mut)}
+.pos{color:var(--g)}.neg{color:var(--r)}.mut{color:var(--mut)}
+.banner{grid-column:1/-1;background:#2a0d0d;border:1px solid #5b1717;color:#fecaca;border-radius:12px;padding:10px 14px;font-weight:600;display:none}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th{font-size:11px;color:var(--mut);text-align:left;font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tw{overflow-x:auto}
+.badge{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px}.b-long{background:#06281a;color:var(--g)}.b-short{background:#2a0d0d;color:var(--r)}.b-warn{background:#3b0a0a;color:#ff8a8a;border:1px solid #7f1d1d;animation:pulse 1.6s infinite}.b-ok{background:#0e2235;color:#7cb4ff}.b-maker{background:#06281a;color:var(--g)}.b-taker{background:#3b2a05;color:var(--y)}
+@keyframes pulse{50%{opacity:.55}}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card2);color:var(--tx);border-radius:9px;padding:8px 11px;font-weight:600;transition:.15s}button:hover{border-color:var(--acc)}button:disabled{opacity:.4;cursor:not-allowed}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button.long{background:var(--g);border-color:var(--g);color:#04130a}button.short{background:var(--r);border-color:var(--r);color:#fff}button.x{color:#ff8a8a;border-color:#5b1717;background:#1d0b0b}button.sm{padding:5px 8px;font-size:12px}
+.seg{display:flex;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}.seg button{flex:1;border:0;background:transparent;color:var(--mut)}.seg button.on.l{background:var(--g);color:#04130a}.seg button.on.s{background:var(--r);color:#fff}.seg button.on.n{background:var(--acc);color:#fff}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.row>label{font-size:11px;color:var(--mut);width:100%;text-transform:uppercase;letter-spacing:.6px}
+input,select{font:inherit;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:9px;padding:8px 10px;min-width:0}input:focus,select:focus{outline:none;border-color:var(--acc)}
+.pcts{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.pcts button.on{border-color:var(--acc);background:#16213d}
+.kv{display:grid;grid-template-columns:1fr auto;gap:4px 10px;font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin:10px 0}.kv span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.note{font-size:11.5px;color:var(--mut);margin-top:8px}.warnt{color:var(--y);font-size:12px}
+.chart{height:340px;width:100%}.chart.sm{height:200px}.spark{height:60px;width:100%}
+.closebar{display:flex;gap:4px;flex-wrap:wrap}.closebar input{width:58px;padding:5px 6px}
+pre{white-space:pre-wrap;font:11.5px/1.45 ui-monospace,Menlo,monospace;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:200px;overflow:auto;margin:8px 0 0}
+.job{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--card2)}.bar{height:5px;background:var(--bg);border-radius:9px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:var(--acc)}
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}.mainc{display:flex;flex-direction:column;gap:14px;min-width:0}
+.tabs button{padding:4px 9px;font-size:12px}.tabs button.on{background:#16213d;border-color:var(--acc)}
+dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:14px;max-width:420px;width:92vw}dialog::backdrop{background:rgba(0,0,0,.6)}
+</style></head><body>
+<header><h1>⚡ Bulk Maker Panel</h1><span id=mode class=pill>…</span><span id=acct class=pill></span><span style="flex:1"></span><span class="pill" id=clock></span></header>
+<main>
+<div class=banner id=banner></div>
+<div class=stats id=stats></div>
+<div class=mainc>
+ <div class=card><h2><span><select id=chartSym></select></span><span class=tabs id=ivs></span></h2><div id=pchart class=chart></div></div>
+ <div class=card><h2>Positions</h2><div class=tw><table id=ptab></table></div>
+  <div class=note>Close buttons send <b>reduce-only Post Only (ALO)</b> limits at the touch and re-price until filled. Never market. A maker close is not a stop-loss.</div></div>
+ <div class=card><h2>Open orders</h2><div class=tw><table id=otab></table></div></div>
+ <div class=card><h2><span>Realised P&amp;L (cumulative, gross of fees)</span><span id=pnlT class=mut></span></h2><div id=pnlchart class="chart sm"></div></div>
+ <div class=card><h2><span>Closed trades</span><span id=ctT class=mut></span></h2><div class=tw style="max-height:360px;overflow:auto"><table id=ctab></table></div></div>
+ <div class=card><h2><span>Recent fills</span><span id=mvol class=mut></span></h2><div class=tw style="max-height:360px;overflow:auto"><table id=ftab></table></div></div>
+</div>
+<div class=side>
+ <div class=card><h2>Maker order ticket</h2>
+  <div class=row><label>Market</label><select id=sym style="flex:1"></select></div>
+  <div class=row><div class=seg style="flex:1"><button id=bL class="on l" onclick="setSide('long')">Long</button><button id=bS class=s onclick="setSide('short')">Short</button></div></div>
+  <div class=row><label>Size · % of available margin × leverage</label><div class=pcts id=pcts style="width:100%"></div>
+   <input id=cpct type=number min=1 max=100 step=1 placeholder="custom %" style="flex:1" oninput="pickPct(+this.value,true)"></div>
+  <div class=row><label>Leverage (Bulk account setting is the max; changing it is done in the Bulk app)</label><select id=lev style="flex:1"></select></div>
+  <div class=row><label>Stop-loss (mark-price trigger · fills as <b style="color:var(--y)">TAKER</b>)</label><input id=sl type=number step=any placeholder="SL price (recommended)" style="flex:1"></div>
+  <div class=row><label>Take-profit (optional · fills as TAKER on trigger)</label><input id=tp type=number step=any placeholder="TP price" style="flex:1"></div>
+  <div class=kv id=pv><span>Preview</span><span>—</span></div>
+  <div id=pvw class=warnt></div>
+  <button id=go class="long" style="width:100%;padding:12px;font-size:15px" onclick="confirmOpen()">Open Long (maker)</button>
+  <div class=note>Opens are <b>Post Only (ALO), not reduce-only</b>, resting at the best bid (long) / best ask (short), re-priced when the touch moves, until the target size fills. SL/TP are placed on Bulk right after the entry finishes, for the filled size. No SL = unprotected position.</div>
+ </div>
+ <div class=card><h2>Equity</h2><div id=spark class=spark></div><div class=note id=eqn></div></div>
+ <div class=card><h2>Active jobs</h2><div id=jobs><span class=mut>none</span></div></div>
+</div>
+</main>
+<dialog id=dlg><h3 id=dt style="margin-top:0"></h3><div id=db class=kv></div><div id=dw class=warnt></div>
+<div class=row style="justify-content:flex-end"><button onclick="dlg.close()">Back</button><button id=dok class=pri>Confirm</button></div></dialog>
+<script>
+const $=id=>document.getElementById(id);
+const f=(n,d=2)=>n==null||isNaN(n)?'—':Number(n).toLocaleString(undefined,{minimumFractionDigits:Math.min(d,2),maximumFractionDigits:d});
+const usd=(n,d=2)=>n==null||isNaN(n)?'—':(n<0?'-$':'$')+f(Math.abs(n),d);
+const sg=n=>n>0?'pos':n<0?'neg':'';
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+let S={side:'long',pct:10,sym:'BTC-USD',syms:[],iv:'15m',chartSym:'BTC-USD',dry:false};
+const PCTS=[10,25,50,75,100];
+$('pcts').innerHTML=PCTS.map(p=>`<button data-p=${p} onclick="pickPct(${p})">${p}%</button>`).join('');
+['1m','5m','15m','1h','4h'].forEach(i=>{const b=document.createElement('button');b.textContent=i;b.dataset.i=i;b.onclick=()=>{S.iv=i;loadCandles(true)};$('ivs').appendChild(b)});
+function pickPct(p,custom){S.pct=p;document.querySelectorAll('#pcts button').forEach(b=>b.classList.toggle('on',+b.dataset.p===p&&!custom));if(!custom)$('cpct').value='';preview()}
+function setSide(s){S.side=s;$('bL').className='l'+(s=='long'?' on':'');$('bS').className='s'+(s=='short'?' on':'');$('go').className=s;$('go').textContent='Open '+(s=='long'?'Long':'Short')+' (maker)';preview()}
+// charts
+const LC=window.LightweightCharts;const base={layout:{background:{color:'transparent'},textColor:'#8a93a6'},grid:{vertLines:{color:'#1a1e28'},horzLines:{color:'#1a1e28'}},rightPriceScale:{borderColor:'#232836'},timeScale:{borderColor:'#232836',timeVisible:true},crosshair:{mode:0}};
+let pc,cs,pnlc,pnls,spc,sps,lines=[];
+if(LC){pc=LC.createChart($('pchart'),{...base,autoSize:true});cs=pc.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderVisible:false,wickUpColor:'#22c55e',wickDownColor:'#ef4444'});
+ pnlc=LC.createChart($('pnlchart'),{...base,autoSize:true});pnls=pnlc.addBaselineSeries({baseValue:{type:'price',price:0},topLineColor:'#22c55e',bottomLineColor:'#ef4444',topFillColor1:'rgba(34,197,94,.25)',bottomFillColor2:'rgba(239,68,68,.25)'});
+ spc=LC.createChart($('spark'),{...base,autoSize:true,handleScroll:false,handleScale:false,rightPriceScale:{visible:false},timeScale:{visible:false},grid:{vertLines:{visible:false},horzLines:{visible:false}}});sps=spc.addAreaSeries({lineColor:'#5b8cff',topColor:'rgba(91,140,255,.3)',bottomColor:'rgba(91,140,255,0)',lineWidth:2,priceLineVisible:false});
+}else{$('pchart').innerHTML='<div class=mut style="padding:20px">Chart library failed to load (offline?). Trading still works.</div>'}
+// tz: lightweight-charts uses UTC; shift to local for display
+const TZ=-new Date().getTimezoneOffset()*60;
+async function loadCandles(fit){document.querySelectorAll('#ivs button').forEach(b=>b.classList.toggle('on',b.dataset.i==S.iv));if(!cs)return;
+ try{const d=await api(`/api/candles?symbol=${S.chartSym}&interval=${S.iv}`);cs.setData(d.candles.map(c=>({...c,time:c.time+TZ})));if(fit)pc.timeScale().fitContent()}catch(e){}}
+function drawLines(sum){if(!cs)return;lines.forEach(l=>cs.removePriceLine(l));lines=[];
+ const p=sum.positions.find(x=>x.symbol==S.chartSym);if(p){lines.push(cs.createPriceLine({price:+p.entry,color:'#5b8cff',lineStyle:2,title:'entry'}));if(p.liq)lines.push(cs.createPriceLine({price:+p.liq,color:'#ef4444',lineStyle:1,title:'liq'}))}
+ sum.orders.filter(o=>o.symbol==S.chartSym).forEach(o=>{const px=o.conditional?(+o.trigger||o.price):o.price;if(px)lines.push(cs.createPriceLine({price:px,color:o.conditional?'#f59e0b':'#94a3b8',lineStyle:3,title:o.conditional?o.type:o.side}))})}
+async function loadSyms(){const d=await api('/api/symbols');S.syms=d.symbols;const opts=d.symbols.map(s=>`<option>${esc(s.symbol)}</option>`).join('');$('sym').innerHTML=opts;$('chartSym').innerHTML=opts;$('sym').value=S.sym;$('chartSym').value=S.chartSym;levOpts()}
+function levOpts(){const s=S.syms.find(x=>x.symbol==S.sym)||{};const mx=s.accountLeverage||s.maxLeverage||1;const set=[...new Set([mx,...[50,40,25,20,10,5,3,2,1].filter(x=>x<mx)])];$('lev').innerHTML=set.map(x=>`<option value=${x}>${x}x${x==mx?' (account max)':''}</option>`).join('')}
+$('sym').onchange=()=>{S.sym=$('sym').value;levOpts();S.chartSym=S.sym;$('chartSym').value=S.sym;loadCandles(true);preview()};
+$('chartSym').onchange=()=>{S.chartSym=$('chartSym').value;loadCandles(true)};
+$('lev').onchange=preview;let lastPv=null;
+async function preview(){try{const d=await api(`/api/preview?symbol=${S.sym}&side=${S.side}&pct=${S.pct}&lev=${$('lev').value}`);lastPv=d;
+ $('pv').innerHTML=`<span>Resting price</span><span>${f(d.price,4)} (${S.side=='long'?'best bid':'best ask'})</span><span>Quantity</span><span>${f(d.qty,6)} ${S.sym.split('-')[0]}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Margin used</span><span>${usd(d.margin)} @ ${d.leverage}x</span><span>Available</span><span>${usd(d.available)} (−${(d.buffer*100).toFixed(0)}% buffer)</span>`;
+ const sl=+$('sl').value;let w=[...d.warn];if(sl){const r=Math.abs(d.price-sl)*d.qty;w.push(`Loss at stop ≈ ${usd(r)} + taker fee`)}else w.push('No stop-loss set → position will be UNPROTECTED');
+ $('pvw').innerHTML=w.map(esc).join('<br>');$('go').disabled=!d.ok}catch(e){$('pv').innerHTML=`<span>Preview</span><span class=neg>${esc(e.message)}</span>`;$('go').disabled=true}}
+$('sl').oninput=preview;$('tp').oninput=preview;
+function ask(title,html,warn,fn){$('dt').textContent=title;$('db').innerHTML=html;$('dw').innerHTML=warn||'';$('dok').onclick=async()=>{dlg.close();try{await fn();refresh()}catch(e){alert(e.message)}};dlg.showModal()}
+function confirmOpen(){if(!lastPv)return;const d=lastPv,sl=$('sl').value,tp=$('tp').value;
+ ask(`Open ${S.side.toUpperCase()} ${S.sym} as MAKER`,`<span>Qty</span><span>${f(d.qty,6)}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Leverage</span><span>${d.leverage}x</span><span>Entry</span><span>ALO post-only @ touch</span><span>Stop-loss</span><span>${sl||'<b class=neg>NONE</b>'}</span><span>Take-profit</span><span>${tp||'—'}</span>`,
+ (sl?'':'⚠ No stop-loss. ')+'Size is recalculated at click time. SL/TP execute as taker when triggered.'+(S.dry?' <b>DRY-RUN: nothing is sent.</b>':''),
+ ()=>api('/api/open',{symbol:S.sym,side:S.side,percent:S.pct,leverage:+$('lev').value,sl:sl||null,tp:tp||null}))}
+function closeP(sym,pct){if(!(pct>0&&pct<=100))return alert('1–100%');ask(`Close ${pct}% of ${sym}`,`<span>Order</span><span>reduce-only ALO @ touch</span><span>Fee</span><span>maker (0 bps now)</span>`,S.dry?'<b>DRY-RUN: nothing is sent.</b>':'',()=>api('/api/close',{symbol:sym,percent:pct}))}
+function cancelJob(id){api('/api/cancel',{id}).then(refresh).catch(e=>alert(e.message))}
+function cancelOrd(sym,id){ask('Cancel order',`<span>${esc(sym)}</span><span>${esc(id.slice(0,10))}…</span>`,'',()=>api('/api/cancel_order',{symbol:sym,id}))}
+function stat(k,v,s,c){return `<div class=stat><div class=k>${k}</div><div class="v ${c||''}">${v}</div><div class=s>${s||'&nbsp;'}</div></div>`}
+async function refresh(){
+ try{const d=await api('/api/summary');S.dry=d.dry;$('mode').textContent=d.dry?'DRY-RUN':'LIVE';$('mode').className='pill '+(d.dry?'dry':'live');$('acct').textContent=d.account;
+ const a=d.agg||{};const mv=(a.maker_vol||0),tv=(a.taker_vol||0);
+ $('stats').innerHTML=stat('Equity',usd(d.equity),'notional '+usd(d.notional,0))+stat('Available',usd(d.available))+stat('Margin used',usd(d.marginUsed),d.equity?f(d.marginUsed/d.equity*100,1)+'% of equity':'')+stat('Unrealised PnL',usd(d.upnl),'',sg(d.upnl))+stat("Today's realised",usd(d.realizedToday),'gross, before fees · since 00:00',sg(d.realizedToday))+(d.closedToday?stat('Today net realised',pm(d.closedToday.net),`${d.closedToday.wins}W / ${d.closedToday.losses}L · fees ${usd(d.closedToday.fees)}`,sg(d.closedToday.net)):'')+stat('Fees today',usd(a.fees_today),'all-time '+usd(d.feesTotal))+stat('Maker vs taker vol',`${mv+tv?f(mv/(mv+tv)*100,0):0}% maker`,`today M ${usd(a.maker_vol_today,0)} · T ${usd(a.taker_vol_today,0)}`);
+ const un=d.unprotected;$('banner').style.display=un.length?'block':'none';$('banner').textContent=un.length?`⚠ No stop-loss on: ${un.join(', ')}. A maker close is not a stop — add an SL in Bulk.`:'';
+ $('ptab').innerHTML=d.positions.length?`<tr><th>Market</th><th>Size</th><th>Entry / Mark</th><th>uPnL</th><th>Liq</th><th>Stop</th><th>Close as maker</th></tr>`+d.positions.map(p=>`<tr><td><b>${esc(p.symbol)}</b> <span class="badge b-${p.side.toLowerCase()}">${p.side} ${f(p.leverage,0)}x</span></td><td>${f(p.size,6)}<div class=mut>${usd(p.notional,0)}</div></td><td>${f(p.entry)}<div class=mut>${f(p.mark)}</div></td><td class=${sg(p.upnl)}>${usd(p.upnl)}</td><td>${f(p.liq)}</td><td>${p.has_stop?'<span class="badge b-ok">SL ✓</span>':'<span class="badge b-warn">NO STOP</span>'}</td><td><div class=closebar>${PCTS.map(x=>`<button class=sm onclick="closeP('${p.symbol}',${x})">${x}%</button>`).join('')}<input id="c_${p.symbol}" type=number min=1 max=100 placeholder=%><button class=sm onclick="closeP('${p.symbol}',+$('c_${p.symbol}').value)">Go</button></div></td></tr>`).join(''):'<tr><td class=mut>No open positions</td></tr>';
+ $('otab').innerHTML=d.orders.length?`<tr><th>Market</th><th>Type</th><th>Side</th><th>Price / Trigger</th><th>Size</th><th></th></tr>`+d.orders.map(o=>`<tr><td>${esc(o.symbol)}</td><td>${esc(o.type)} ${o.tif?'<span class=mut>'+esc(o.tif)+'</span>':''}${o.reduceOnly?' <span class=mut>RO</span>':''}</td><td>${esc(o.side)}</td><td>${o.conditional?'⚡ '+f(o.trigger||o.price):f(o.price)}</td><td>${f(o.size,6)}</td><td><button class="sm x" onclick="cancelOrd('${esc(o.symbol)}','${esc(o.id)}')">Cancel</button></td></tr>`).join(''):'<tr><td class=mut>No open orders</td></tr>';
+ if(sps&&d.equityHistory.length){sps.setData(d.equityHistory.map(x=>({time:x[0]+TZ,value:x[1]})));spc.timeScale().fitContent();const e0=d.equityHistory[0][1];$('eqn').innerHTML=`${d.equityHistory.length} samples (1/min while panel runs) · change ${usd(d.equity-e0)}`}
+ drawLines(d);
+ }catch(e){$('banner').style.display='block';$('banner').textContent='API error: '+e.message}
+ try{const j=await api('/api/jobs');$('jobs').innerHTML=j.jobs.length?j.jobs.map(x=>{const pct=x.target?Math.min(100,x.filled/x.target*100):0;const run=['starting','working'].includes(x.state);
+  return `<div class=job><div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><span><b>${x.kind=='open'?'OPEN '+x.side.toUpperCase():'CLOSE'}</b> ${esc(x.sym)} · ${x.pct}% · <span class=${run?'pos':'mut'}>${x.state}</span>${x.dry?' <span class="pill dry">dry</span>':''}</span>${run?`<button class="sm x" onclick="cancelJob('${x.id}')">Cancel</button>`:''}</div>
+  <div class=mut style="font-size:12px;margin-top:4px">resting ${f(x.resting_px,4)} · filled ${f(x.filled,6)} / ${f(x.target,6)}${x.sl?' · SL '+x.sl:''}${x.tp?' · TP '+x.tp:''}${x.protection?' · '+esc(x.protection):''}</div><div class=bar><i style="width:${pct}%"></i></div>${x.result?`<div class=${sg(x.result.net)} style="font-weight:700;margin:4px 0">${esc(x.result.text)} <span class=mut style="font-weight:400">gross ${pm(x.result.gross)} · fees ${usd(x.result.fees)}</span></div>`:''}<pre>${esc(x.log.slice(-14).join('\n'))}</pre></div>`}).join(''):'<span class=mut>none</span>'}catch(e){}
+}
+function pm(v){v=+v||0;return (v>=0?'+':'-')+'$'+Math.abs(v).toFixed(2)}
+async function slow(){
+ try{const c=await api('/api/closed');const t=c.today;$('ctT').innerHTML=`today <span class=${sg(t.net)}>${pm(t.net)}</span> · ${t.wins}W/${t.losses}L`;
+ $('ctab').innerHTML=`<tr><th>Time</th><th>Market</th><th>Closed</th><th>Size</th><th>Entry</th><th>Avg exit</th><th>Gross</th><th>Fees</th><th>Net</th><th>ROE</th><th>Role</th></tr>`+c.trades.map(x=>`<tr><td class=mut>${new Date(x.t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td><td>${esc(x.symbol)}</td><td class=${x.side=='LONG'?'pos':'neg'}>${x.side}</td><td>${f(x.size,6)}</td><td>${f(x.entry)}</td><td>${f(x.exit)}</td><td class=${sg(x.gross)}>${pm(x.gross)}</td><td>${usd(x.fees)}</td><td class=${sg(x.net)}><b>${pm(x.net)}</b></td><td class=${sg(x.roe)}>${x.roe.toFixed(1)}%</td><td><span class="badge b-${x.role}">${x.role}</span></td></tr>`).join('')}catch(e){}
+ try{const p=await api('/api/pnl');if(pnls){pnls.setData(p.series.reduce((a,x)=>{const t=x.t+TZ;if(a.length&&a[a.length-1].time>=t)a[a.length-1].value=x.v;else a.push({time:t,value:x.v});return a},[]));pnlc.timeScale().fitContent()}const last=p.series.length?p.series[p.series.length-1].v:0;$('pnlT').innerHTML=`<span class=${sg(last)}>${usd(last)}</span> over ${p.series.length} closed positions`}catch(e){}
+ try{const d=await api('/api/fills');const a=d.agg;$('mvol').textContent=`maker ${usd(a.maker_vol,0)} · taker ${usd(a.taker_vol,0)} (last ${d.fills.length})`;
+ $('ftab').innerHTML=`<tr><th>Time</th><th>Market</th><th>Side</th><th>Price</th><th>Size</th><th>Fee</th><th>Realised</th><th>Net</th><th>Role</th></tr>`+d.fills.map(x=>`<tr><td class=mut>${new Date(x.t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}</td><td>${esc(x.symbol)}</td><td class=${x.side=='BUY'?'pos':'neg'}>${x.side}</td><td>${f(x.price)}</td><td>${f(x.size,6)}</td><td>${usd(x.fee,4)}</td><td class=${x.close?sg(x.pnl):'mut'}>${x.close?pm(x.pnl):'open'}</td><td class=${x.close?sg(x.net):'mut'}>${x.close?pm(x.net):''}</td><td><span class="badge b-${x.role}">${x.role}</span></td></tr>`).join('')}catch(e){}
+ loadCandles(false)}
+setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString()},1000);
+(async()=>{await loadSyms().catch(e=>alert(e.message));pickPct(10);await refresh();loadCandles(true);slow();setInterval(refresh,3000);setInterval(slow,20000);setInterval(preview,6000)})();
+</script></body></html>

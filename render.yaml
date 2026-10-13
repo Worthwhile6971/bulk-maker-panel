@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: bulk-maker-panel
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: python panel.py --public
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: BULK_ACCOUNT
+        sync: false
+      - key: BULK_AGENT_PRIVATE_KEY
+        sync: false
+      - key: PANEL_TOKEN
+        sync: false

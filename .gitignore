@@ -1,0 +1,6 @@
+agent.env
+.venv/
+__pycache__/
+*.pyc
+equity_history.json*
+phone_token
