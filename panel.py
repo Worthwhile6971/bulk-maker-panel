@@ -660,6 +660,11 @@ def main():
         except Exception:
             print("(install 'qrcode' for a terminal QR code)")
         sys.stdout.flush()
+    try:
+        import tg_reader   # Telegram read-only reader: off unless TG_ENABLED=1; never blocks startup
+        # busy_fn: True while any maker job is starting/working -> the reader skips its dialog scan (never raises into the panel)
+        tg_reader.install(H, busy_fn=lambda: any(j.state in ("starting", "working") for j in list(JOBS.values())))
+    except Exception as _e: print("tg_reader not started:", type(_e).__name__, flush=True)
     ThreadingHTTPServer((a.host, a.port), H).serve_forever()
 
 if __name__ == "__main__": main()
