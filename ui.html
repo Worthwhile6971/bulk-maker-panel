@@ -36,7 +36,9 @@ pre{white-space:pre-wrap;font:11.5px/1.45 ui-monospace,Menlo,monospace;backgroun
 .tabs button{padding:4px 9px;font-size:12px}.tabs button.on{background:#16213d;border-color:var(--acc)}
 dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);border-radius:14px;max-width:420px;width:92vw}dialog::backdrop{background:rgba(0,0,0,.6)}
 </style></head><body>
-<header><h1>⚡ Bulk Maker Panel</h1><span id=mode class=pill>…</span><span id=acct class=pill></span><span style="flex:1"></span><span class="pill" id=clock></span></header>
+<div id=chooser style="position:fixed;inset:0;background:#000e;z-index:99;display:flex;align-items:center;justify-content:center"><div class=card style="max-width:460px;width:90%"><h2>Which Bulk account are you trading?</h2><p class=mut>Every order, stop, cancel, position and risk check uses ONLY the account you pick. Nothing loads until you choose.</p><div id=chopts>Loading…</div></div></div>
+<div id=accbar style="padding:10px 16px;font-weight:800;font-size:16px;background:#2a0d0d;color:#fecaca">NO ACCOUNT SELECTED</div>
+<header><h1>⚡ Bulk Maker Panel</h1><button class=sm onclick="location.reload()">Switch account</button><span id=mode class=pill>…</span><span id=acct class=pill></span><span style="flex:1"></span><span class="pill" id=clock></span></header>
 <main>
 <div class=banner id=banner></div>
 <div class=stats id=stats></div>
@@ -76,7 +78,10 @@ const f=(n,d=2)=>n==null||isNaN(n)?'—':Number(n).toLocaleString(undefined,{min
 const usd=(n,d=2)=>n==null||isNaN(n)?'—':(n<0?'-$':'$')+f(Math.abs(n),d);
 const sg=n=>n>0?'pos':n<0?'neg':'';
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
+let ACC=null,ACCS=[];const accLabel=()=>{const a=ACCS.find(x=>x.key===ACC);return a?a.label+' · '+a.pubkey:'NO ACCOUNT'};
+async function api(p,b){if(p!=='/api/accounts'&&!/^\/api\/(book|candles)/.test(p)){if(!ACC)throw new Error('Choose an account first');
+ if(b){b=Object.assign({acct:ACC},b)}else{p+=(p.includes('?')?'&':'?')+'acct='+encodeURIComponent(ACC)}}
+ const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
 let S={side:'long',pct:10,sym:'BTC-USD',syms:[],iv:'15m',chartSym:'BTC-USD',dry:false};
 const PCTS=[10,25,50,75,100];
 $('pcts').innerHTML=PCTS.map(p=>`<button data-p=${p} onclick="pickPct(${p})">${p}%</button>`).join('');
@@ -102,12 +107,12 @@ function levOpts(){const s=S.syms.find(x=>x.symbol==S.sym)||{};const mx=s.accoun
 $('sym').onchange=()=>{S.sym=$('sym').value;levOpts();S.chartSym=S.sym;$('chartSym').value=S.sym;loadCandles(true);preview()};
 $('chartSym').onchange=()=>{S.chartSym=$('chartSym').value;loadCandles(true)};
 $('lev').onchange=preview;let lastPv=null;
-async function preview(){try{const d=await api(`/api/preview?symbol=${S.sym}&side=${S.side}&pct=${S.pct}&lev=${$('lev').value}`);lastPv=d;
- $('pv').innerHTML=`<span>Resting price</span><span>${f(d.price,4)} (${S.side=='long'?'best bid':'best ask'})</span><span>Quantity</span><span>${f(d.qty,6)} ${S.sym.split('-')[0]}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Margin used</span><span>${usd(d.margin)} @ ${d.leverage}x</span><span>Available</span><span>${usd(d.available)} (−${(d.buffer*100).toFixed(0)}% buffer)</span>`;
+async function preview(){try{const d=await api(`/api/preview?symbol=${S.sym}&side=${S.side}&pct=${S.pct}&lev=${$('lev').value}&sl=${encodeURIComponent($('sl').value||'')}`);lastPv=d;
+ $('pv').innerHTML=`<span>Resting price</span><span>${f(d.price,4)} (${S.side=='long'?'best bid':'best ask'})</span><span>Quantity</span><span>${f(d.qty,6)} ${S.sym.split('-')[0]}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Margin used</span><span>${usd(d.margin)} @ ${d.leverage}x</span><span>Available</span><span>${usd(d.available)} (−${(d.buffer*100).toFixed(0)}% buffer)</span><span>Account</span><span>${esc(d.account)}</span><span>Sizing</span><span>${esc(d.sizedBy)}</span><span>Open risk / cap</span><span>${usd(d.openRisk)} / ${usd(d.riskCap)}${d.halted?' HALTED':''}</span>`;
  const sl=+$('sl').value;let w=[...d.warn];if(sl){const r=Math.abs(d.price-sl)*d.qty;w.push(`Loss at stop ≈ ${usd(r)} + taker fee`)}else w.push('No stop-loss set → position will be UNPROTECTED');
  $('pvw').innerHTML=w.map(esc).join('<br>');$('go').disabled=!d.ok}catch(e){$('pv').innerHTML=`<span>Preview</span><span class=neg>${esc(e.message)}</span>`;$('go').disabled=true}}
 $('sl').oninput=preview;$('tp').oninput=preview;
-function ask(title,html,warn,fn){$('dt').textContent=title;$('db').innerHTML=html;$('dw').innerHTML=warn||'';$('dok').onclick=async()=>{dlg.close();try{await fn();refresh()}catch(e){alert(e.message)}};dlg.showModal()}
+function ask(title,html,warn,fn){if(!ACC)return alert('Choose an account first');title='['+accLabel()+'] '+title;html=`<span><b>ACCOUNT</b></span><span><b>${esc(accLabel())}</b></span>`+html;$('dt').textContent=title;$('db').innerHTML=html;$('dw').innerHTML=warn||'';$('dok').onclick=async()=>{dlg.close();try{await fn();refresh()}catch(e){alert(e.message)}};dlg.showModal()}
 function confirmOpen(){if(!lastPv)return;const d=lastPv,sl=$('sl').value,tp=$('tp').value,useSl=$('usesl').checked;
  if(useSl&&!sl){alert('Enter a stop-loss price (or untick "Use stop-loss" to open without one).');$('sl').focus();return}
  if(!sl&&!confirm('Open '+S.side.toUpperCase()+' '+S.sym+' WITHOUT a stop-loss? The position will be UNPROTECTED.'))return;
@@ -142,5 +147,9 @@ async function slow(){
  $('ftab').innerHTML=`<tr><th>Time</th><th>Market</th><th>Side</th><th>Price</th><th>Size</th><th>Fee</th><th>Realised</th><th>Net</th><th>Role</th></tr>`+d.fills.map(x=>`<tr><td class=mut>${new Date(x.t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}</td><td>${esc(x.symbol)}</td><td class=${x.side=='BUY'?'pos':'neg'}>${x.side}</td><td>${f(x.price)}</td><td>${f(x.size,6)}</td><td>${usd(x.fee,4)}</td><td class=${x.close?sg(x.pnl):'mut'}>${x.close?pm(x.pnl):'open'}</td><td class=${x.close?sg(x.net):'mut'}>${x.close?pm(x.net):''}</td><td><span class="badge b-${x.role}">${x.role}</span></td></tr>`).join('')}catch(e){}
  loadCandles(false)}
 setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString()},1000);
-(async()=>{await loadSyms().catch(e=>alert(e.message));pickPct(10);await refresh();loadCandles(true);slow();setInterval(refresh,3000);setInterval(slow,20000);setInterval(preview,6000)})();
+(async()=>{try{const d=await api('/api/accounts');ACCS=d.accounts}catch(e){$('chopts').textContent='Error: '+e.message;return}
+ $('chopts').innerHTML=ACCS.map(a=>`<button style="width:100%;margin-top:8px;padding:14px;font-size:16px" ${a.ok?'':'disabled'} data-k="${esc(a.key)}">${esc(a.label)}${a.ok?' · '+esc(a.pubkey):' (unavailable)'}</button>`).join('');
+ await new Promise(res=>$('chopts').onclick=e=>{const k=e.target.dataset&&e.target.dataset.k;if(k){ACC=k;res()}});
+ $('chooser').style.display='none';const ab=$('accbar');ab.textContent='TRADING ON: '+accLabel();ab.style.background=ACC==='challenge'?'#3b2306':'#172554';ab.style.color=ACC==='challenge'?'#fde68a':'#bfdbfe';
+ await loadSyms().catch(e=>alert(e.message));pickPct(10);await refresh();loadCandles(true);slow();setInterval(refresh,3000);setInterval(slow,20000);setInterval(preview,6000)})();
 </script></body></html>

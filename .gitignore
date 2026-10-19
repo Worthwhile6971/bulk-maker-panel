@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 equity_history.json*
 phone_token
+net_sizes*.json
+risk_equity_*.json
+HALT_*
+ALERTS_*.log
+*.tmp

@@ -45,9 +45,14 @@ label{font-size:12px;color:var(--mu);display:block;margin:10px 2px 4px}
 .sheet.show{display:flex}.sh{background:var(--card);width:100%;max-width:520px;margin:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(env(safe-area-inset-bottom) + 16px)}
 .sh h4{margin:0 0 10px;font-size:18px}.kvs{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px;margin-bottom:12px}.kvs span:nth-child(odd){color:var(--mu)}.kvs span:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
 details summary{color:var(--mu);font-size:12px;margin-top:6px}pre{white-space:pre-wrap;font-size:11px;color:var(--mu);max-height:160px;overflow:auto;margin:6px 0 0}
+.accbar{display:flex;justify-content:space-between;align-items:center;border-radius:12px;padding:8px 12px;margin-bottom:8px;font-weight:800;font-size:15px}
+.acc-main{background:#172554;color:#bfdbfe;border:2px solid #3b82f6}.acc-challenge{background:#3b2306;color:#fde68a;border:2px solid #f59e0b}.acc-none{background:#2a0d0d;color:#fecaca;border:2px solid #ef4444}
+.chooser{position:fixed;inset:0;background:#000d;z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}.chooser .sh{border-radius:20px}
+.chooser button{width:100%;margin-top:10px;min-height:64px;font-size:18px}
 .toast{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 16px);background:#1f2937;padding:12px 14px;border-radius:12px;display:none;z-index:30}
 </style></head><body>
 <div class="top">
+ <div class="accbar acc-none" id="accbar"><span id="accname">NO ACCOUNT SELECTED</span><button id="accsw" style="min-height:34px">Switch</button></div>
  <div class="hdr"><b>Bulk Maker</b><span><span class="mu" id="acc"></span> <span id="mode" class="pill dry">…</span></span></div>
  <div class="acct">
   <div class="kv"><small>Equity</small><span id="eq">–</span></div>
@@ -82,6 +87,7 @@ details summary{color:var(--mu);font-size:12px;margin-top:6px}pre{white-space:pr
 <div class="sheet" id="sheet"><div class="sh"><h4 id="shT"></h4><div class="kvs" id="shB"></div><div id="shN" class="warn"></div>
  <div class="grid g2" style="margin-top:12px"><button id="shX">Cancel</button><button class="prim" id="shOk">Confirm</button></div></div></div>
 <div class="toast" id="toast"></div>
+<div class="chooser" id="chooser"><div class="sh"><h4>Which Bulk account are you trading?</h4><div class="mu">Every order, stop, cancel, position and risk check uses ONLY the account you pick. Nothing loads until you choose.</div><div id="chopts">Loading…</div></div></div>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -90,12 +96,19 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const usd=(v,d=2)=>v==null||isNaN(v)?'–':(v<0?'-$':'$')+Math.abs(+v).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
 const sg=v=>v>0?'pos':v<0?'neg':'';
 const px=v=>v==null||v===''?'–':(+v).toLocaleString(undefined,{maximumFractionDigits:6});
-async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),credentials:'same-origin'}:{credentials:'same-origin'});
+let ACC=null,ACCS=[];
+function accLabel(){const a=ACCS.find(x=>x.key===ACC);return a?a.label+' · '+a.pubkey:'NO ACCOUNT'}
+async function api(p,b){if(p!=='/api/accounts'&&!/^\/api\/(book|candles)/.test(p)){if(!ACC)throw new Error('Choose an account first');
+ if(b){b=Object.assign({acct:ACC},b)}else{p+=(p.includes('?')?'&':'?')+'acct='+encodeURIComponent(ACC)}}
+ const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),credentials:'same-origin'}:{credentials:'same-origin'});
  if(r.status===401){location.reload();throw new Error('unauthorized')}const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3500)}
 let onOk=null;
-function ask(title,rows,note,fn,short){$('shT').textContent=title;$('shB').innerHTML=rows.map(([k,v])=>`<span>${esc(k)}</span><span>${esc(v)}</span>`).join('');
- $('shN').innerHTML=(S.dry?'<b>DRY-RUN: nothing is sent.</b> ':'')+(note||'');$('shOk').className='prim'+(short?' short':'');onOk=fn;$('sheet').classList.add('show')}
+function ask(title,rows,note,fn,short){if(!ACC)return toast('Choose an account first');const A=ACC,AL=accLabel();
+ rows=[['ACCOUNT',AL],...rows];title='['+(ACCS.find(x=>x.key===A)||{}).label+'] '+title;const f0=fn;
+ fn=()=>{if(ACC!==A)throw new Error('Account changed - order NOT sent');return f0()};
+ $('shT').textContent=title;$('shB').innerHTML=rows.map(([k,v])=>`<span>${esc(k)}</span><span>${esc(v)}</span>`).join('');
+ $('shN').innerHTML=`<div class="accbar acc-${A}" style="margin:0 0 8px">Trading on ${esc(AL)}</div>`+(S.dry?'<b>DRY-RUN: nothing is sent.</b> ':'')+(note||'');$('shOk').className='prim'+(short?' short':'');onOk=fn;$('sheet').classList.add('show')}
 $('shX').onclick=()=>$('sheet').classList.remove('show');
 $('sheet').onclick=e=>{if(e.target.id==='sheet')$('sheet').classList.remove('show')};
 $('shOk').onclick=async()=>{const f=onOk;onOk=null;$('sheet').classList.remove('show');if(!f)return;try{await f();toast('Sent');refresh()}catch(e){toast('Error: '+e.message)}};
@@ -113,17 +126,24 @@ async function loadSyms(){const d=await api('/api/symbols');S.syms=d.symbols;$('
 function levOpts(){const s=S.syms.find(x=>x.symbol===S.sym)||{};const mx=+(s.accountLeverage||s.maxLeverage||1);
  const L=[...new Set([1,2,3,5,10,20,25,40,50,mx].filter(x=>x<=mx))].sort((a,b)=>b-a);$('lev').innerHTML=L.map(l=>`<option value="${l}">${l}x${l===mx?' (acct)':''}</option>`).join('')}
 let lastPv=null,pvSeq=0;
-async function preview(){const n=++pvSeq;try{const d=await api(`/api/preview?symbol=${encodeURIComponent(S.sym)}&side=${S.side}&pct=${S.pct}&lev=${$('lev').value}`);if(n!==pvSeq)return;lastPv=d;
+async function preview(){const n=++pvSeq;try{const d=await api(`/api/preview?symbol=${encodeURIComponent(S.sym)}&side=${S.side}&pct=${S.pct}&lev=${$('lev').value}&sl=${encodeURIComponent($('sl').value||'')}`);if(n!==pvSeq)return;lastPv=d;
  const sl=+$('sl').value;const loss=sl?Math.abs(d.price-sl)*d.qty:null;
- $('pv').innerHTML=`${S.pct}% → <b>${px(d.qty)}</b> ${esc(S.sym.split('-')[0])} ≈ <b>${usd(d.notional,0)}</b> @ ${px(d.price)} · margin ${usd(d.margin,0)}${loss?` · loss at SL <span class=neg>${usd(loss)}</span>`:''}`+(d.warn.length?`<div class=warn>${d.warn.map(esc).join('<br>')}</div>`:'')}catch(e){$('pv').textContent='Preview error: '+e.message}}
+ $('pv').innerHTML=`${S.pct}% → <b>${px(d.qty)}</b> ${esc(S.sym.split('-')[0])} ≈ <b>${usd(d.notional,0)}</b> @ ${px(d.price)} · margin ${usd(d.margin,0)}${loss?` · loss at SL <span class=neg>${usd(loss)}</span>`:''}<div class=mu>${esc(d.acctLabel)} · sized by ${esc(d.sizedBy)} · open risk ${usd(d.openRisk)} / cap ${usd(d.riskCap)}${d.halted?' · <b class=neg>HALTED</b>':''}</div>`+(d.warn.length?`<div class=warn>${d.warn.map(esc).join('<br>')}</div>`:'')}catch(e){$('pv').textContent='Preview error: '+e.message}}
 $('sl').oninput=preview;
 $('go').onclick=async()=>{await preview();const d=lastPv;if(!d)return;if(!d.ok)return toast('Size too small');
  const sl=$('sl').value,tp=$('tp').value,useSl=$('usesl').checked;
  if(useSl&&!sl){toast('Enter a stop-loss (or switch SL off to open without one)');$('sl').focus();return}
  if(!sl&&!confirm('Open WITHOUT a stop-loss? The position will be UNPROTECTED.'))return;const loss=sl?Math.abs(d.price-+sl)*d.qty:null;
- ask(`${S.side==='long'?'Long':'Short'} ${S.sym}`,[['Size',`${px(d.qty)} (${S.pct}%)`],['Notional',usd(d.notional,0)],['Price','~'+px(d.price)+' (rests at touch)'],['Leverage',d.leverage+'x'],['Margin',usd(d.margin,0)],['Stop-loss',sl||'NONE'],['Take-profit',tp||'–'],['Loss at SL',loss?usd(loss):'–'],['Order','ALO post-only (maker)']],
+ ask(`${S.side==='long'?'Long':'Short'} ${S.sym}`,[['Size',`${px(d.qty)} (${S.pct}%)`],['Notional',usd(d.notional,0)],['Price','~'+px(d.price)+' (rests at touch)'],['Leverage',d.leverage+'x'],['Margin',usd(d.margin,0)],['Stop-loss',sl||'NONE'],['Take-profit',tp||'–'],['Loss at SL',loss?usd(loss):'–'],['Sizing',d.sizedBy],['Order','ALO post-only (maker)']],
   sl?'':'<b style="color:#ef4444">No stop-loss set.</b>',()=>api('/api/open',{symbol:S.sym,side:S.side,percent:S.pct,leverage:+$('lev').value,sl:sl||null,tp:tp||null,confirm_no_sl:!sl}),S.side==='short')};
 
+async function chooseAcc(k){ACC=k;S.closeC={};$('chooser').style.display='none';$('sheet').classList.remove('show');onOk=null;
+ $('accbar').className='accbar acc-'+k;$('accname').textContent='TRADING ON: '+accLabel();
+ ['pos','ords','jobs','fills','closed','today'].forEach(i=>$(i).innerHTML='<span class=mu>Loading…</span>');$('eq').textContent=$('av').textContent=$('up').textContent='–';
+ try{await loadSyms();preview()}catch(e){toast(e.message)}refresh();loadFills();loadClosed()}
+async function showChooser(){$('chooser').style.display='flex';try{const d=await api('/api/accounts');ACCS=d.accounts;
+ $('chopts').innerHTML=ACCS.map(a=>`<button class="accbar acc-${a.key}" ${a.ok?'':'disabled'} onclick="chooseAcc('${a.key}')">${esc(a.label)}${a.ok?' · '+esc(a.pubkey):' (unavailable: '+esc(a.error)+')'}</button>`).join('')}catch(e){$('chopts').textContent='Error: '+e.message}}
+$('accsw').onclick=()=>{$('sheet').classList.remove('show');onOk=null;showChooser()};
 function closeP(sym,pct){pct=+pct;if(!(pct>0&&pct<=100))return toast('Enter 1–100%');
  ask(`Close ${pct}% of ${sym}`,[['Order','reduce-only ALO at touch'],['Fee','maker']],'',()=>api('/api/close',{symbol:sym,percent:pct}))}
 function cancelJob(id){api('/api/cancel',{id}).then(()=>{toast('Cancel requested');refresh()}).catch(e=>toast(e.message))}
@@ -131,8 +151,8 @@ function cancelOrd(sym,id){ask('Cancel order',[['Market',sym],['Order',id.slice(
 document.body.addEventListener('click',e=>{const b=e.target.closest('button[data-a]');if(!b)return;const d=b.dataset;
  if(d.a==='cl')closeP(d.s,d.p);if(d.a==='clc')closeP(d.s,$('cc_'+d.i).value);if(d.a==='cj')cancelJob(d.id);if(d.a==='co')cancelOrd(d.s,d.id)});
 
-async function refresh(){
- try{const d=await api('/api/summary');S.dry=d.dry;$('mode').textContent=d.dry?'DRY-RUN':'LIVE';$('mode').className='pill '+(d.dry?'dry':'live');$('acc').textContent=d.account;
+async function refresh(){if(!ACC)return;const A=ACC;
+ try{const d=await api('/api/summary');if(A!==ACC||d.acct!==ACC)return;S.dry=d.dry;$('mode').textContent=d.dry?'DRY-RUN':'LIVE';$('mode').className='pill '+(d.dry?'dry':'live');$('acc').textContent=d.account;
   {const na=d.netAlerts||[];let b=$('netal');if(!b){b=document.createElement('div');b.id='netal';b.className='card';b.style.cssText='background:#2a0d0d;color:#fecaca;font-weight:600';$('pos').before(b)}
    b.style.display=na.length?'block':'none';b.innerHTML=na.map(a=>'⚠ '+esc(a.text)).join('<br>')+(na.length?' <button onclick="api(\'/api/dismiss_alerts\',{}).then(refresh)">Dismiss</button>':'')}
   $('eq').textContent=usd(d.equity);$('av').textContent=usd(d.available);$('up').innerHTML=`<span class=${sg(d.upnl)}>${usd(d.upnl)}</span>`;
@@ -154,14 +174,14 @@ async function refresh(){
 }
 function pm(v){v=+v||0;return (v>=0?'+':'-')+'$'+Math.abs(v).toFixed(2)}
 const X={closed:false,fills:false};function more(k,n){return n>3?`<button class=btn style="width:100%;margin-top:6px" onclick="X.${k}=!X.${k};${k==='closed'?'loadClosed':'loadFills'}()">${X[k]?'See less':'See more ('+(n-3)+')'}</button>`:''}
-async function loadClosed(){try{const d=await api('/api/closed');const t=d.today;
+async function loadClosed(){if(!ACC)return;try{const d=await api('/api/closed');const t=d.today;
  $('today').innerHTML=`<div class=row><div><small class=mu>Net realised (since 00:00)</small><div style="font-size:24px;font-weight:700" class=${sg(t.net)}>${pm(t.net)}</div></div><div style="text-align:right"><div><span class=pos>${t.wins}W</span> / <span class=neg>${t.losses}L</span></div><div class=mu>gross ${pm(t.gross)} · fees ${usd(t.fees)}</div></div></div>`;
  $('closed').innerHTML=d.trades.length?d.trades.slice(0,X.closed?20:3).map(c=>`<div class=it style="border-left:3px solid ${c.net>=0?'var(--g)':'var(--r)'};padding-left:8px"><div><b>${esc(c.symbol)}</b> <span class=${c.side==='LONG'?'pos':'neg'}>${c.side}</span> <span class="tag ${c.role==='maker'?'mk':'tk'}">${esc(c.role.toUpperCase())}</span>
  <div class=mu>${new Date(c.t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${px(c.size)}</div><div class=mu>entry ${px(c.entry)} → exit ${px(c.exit)}</div></div>
  <div style="text-align:right"><b class=${sg(c.net)} style="font-size:17px">${pm(c.net)}</b><div class=mu>${(c.roe>=0?'+':'')+c.roe.toFixed(1)}% ROE</div><div class=mu>gross ${pm(c.gross)} · fee ${usd(c.fees)}</div></div></div>`).join('')+more('closed',d.trades.length):'<span class=mu>No closed trades</span>'}catch(e){}}
-async function loadFills(){try{const d=await api('/api/fills');$('fills').innerHTML=d.fills.length?d.fills.slice(0,X.fills?15:3).map(f=>`<div class=it><div><b>${esc(f.symbol)}</b> <span class=${f.side==='BUY'?'pos':'neg'}>${f.side}</span> <span class="tag ${f.role==='maker'?'mk':'tk'}">${f.role.toUpperCase()}</span>
+async function loadFills(){if(!ACC)return;try{const d=await api('/api/fills');$('fills').innerHTML=d.fills.length?d.fills.slice(0,X.fills?15:3).map(f=>`<div class=it><div><b>${esc(f.symbol)}</b> <span class=${f.side==='BUY'?'pos':'neg'}>${f.side}</span> <span class="tag ${f.role==='maker'?'mk':'tk'}">${f.role.toUpperCase()}</span>
  <div class=mu>${new Date(f.t).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · ${px(f.size)} @ ${px(f.price)}${f.close?' · close':''}</div></div><div style="text-align:right">${f.close?`<b class=${sg(f.net)}>${pm(f.pnl)}</b><div class=mu>net <span class=${sg(f.net)}>${pm(f.net)}</span> · fee ${usd(f.fee)}</div>`:`${usd(f.notional,0)}<div class=mu>open · fee ${usd(f.fee)}</div>`}</div></div>`).join('')+more('fills',d.fills.length):'<span class=mu>No fills</span>'}catch(e){}}
-marks();loadSyms().then(preview).catch(e=>toast(e.message));refresh();loadFills();loadClosed();
+marks();showChooser();
 setInterval(()=>{if(!document.hidden)refresh()},3000);setInterval(()=>{if(!document.hidden){loadFills();loadClosed()}},15000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){refresh();loadFills();loadClosed()}});
 </script></body></html>
