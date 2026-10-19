@@ -39,6 +39,7 @@ DRY = False; DRY_ITERS = 5
 JOBS = {}; JOBS_LOCK = threading.Lock()
 MKT = {}; MKT_T = [0.0]
 EQ_FILE = os.path.join(HERE, "equity_history.json")
+NET_FILE = os.path.join(HERE, "net_sizes.json")   # last seen net size per coin (unexpected-change alerts, 19 Oct 2026)
 CACHE = {}; CACHE_LOCK = threading.Lock()
 MAJORS = ["BTC-USD", "ETH-USD", "SOL-USD"]
 
@@ -252,8 +253,41 @@ def eq_record(v):
             tmp = EQ_FILE + ".tmp"; json.dump(EQ[-5000:], open(tmp, "w")); os.replace(tmp, EQ_FILE)
         except Exception: pass
 
+# ---------------- unexpected net-size change alerts (all coins, discretionary included) ----------------
+NET = {"sizes": None}; NET_ALERTS = []; NET_LOCK = threading.Lock(); JOB_GRACE = 120
+def _net_load():
+    try: NET["sizes"] = json.load(open(NET_FILE)).get("sizes")
+    except Exception: NET["sizes"] = None
+def net_watch(fa):
+    """Alert when a coin's net size changes and no panel job on that coin is running or ended < JOB_GRACE s ago.
+    Changes from the strategies, the Bulk app, liquidations or stops all alert (shown as a banner until dismissed)."""
+    cur = {}
+    for p in fa.get("positions", []) or []:
+        s = round(fnum(p.get("size")), 8)
+        if s: cur[p["symbol"]] = s
+    with NET_LOCK:
+        prev = NET["sizes"]
+        if prev is not None:
+            now = time.time()
+            busy = {j.sym for j in list(JOBS.values()) if j.state in ("starting", "working") or now - getattr(j, "ended", now) < JOB_GRACE}
+            for sym in sorted(set(prev) | set(cur)):
+                a, b = prev.get(sym, 0.0), cur.get(sym, 0.0)
+                if abs(a - b) > 1e-7 and sym not in busy:
+                    NET_ALERTS.append({"t": int(now), "symbol": sym, "from": a, "to": b,
+                                       "text": "%s net size changed %+g -> %+g (not from a panel job)" % (sym, a, b)})
+                    print("ALERT net size", sym, a, "->", b, flush=True)
+            del NET_ALERTS[:-30]
+        if prev != cur:
+            NET["sizes"] = cur
+            try:
+                tmp = NET_FILE + ".tmp"; json.dump({"sizes": cur, "t": int(time.time())}, open(tmp, "w")); os.replace(tmp, NET_FILE)
+            except Exception: pass
+        elif prev is None: NET["sizes"] = cur
+
 def summary():
     fa = account(); m = fa.get("margin", {}) or {}
+    try: net_watch(fa)
+    except Exception as e: print("net_watch error", repr(e)[:200], flush=True)
     total = fnum(m.get("totalMargin")); upnl = fnum(m.get("unrealizedPnl"))
     equity = total  # Bulk totalMargin is collateral marked-to-market (matches app "Equity")
     eq_record(equity)
@@ -267,7 +301,7 @@ def summary():
             "upnl": upnl, "notional": fnum(m.get("notional")), "realizedTotal": fnum(m.get("realizedPnl")),
             "feesTotal": -fnum(m.get("fees")), "realizedToday": today, "closedToday": ctoday, "agg": agg,
             "positions": pos, "unprotected": [p["symbol"] for p in pos if not p["has_stop"]],
-            "orders": open_orders(fa), "dry": DRY, "account": ACCOUNT[:4] + ".." + ACCOUNT[-4:],
+            "orders": open_orders(fa), "dry": DRY, "netAlerts": NET_ALERTS[-10:], "account": ACCOUNT[:4] + ".." + ACCOUNT[-4:],
             "equityHistory": EQ[-1500:]}
 
 def symbols():
@@ -323,6 +357,8 @@ class Job:
             else: self.run_close()
         except Exception as e:
             self.state = "error"; self.L("ERROR", repr(e)[:300]); traceback.print_exc()
+        finally:
+            self.ended = time.time()
 
     def _spec(self):
         mi = market(self.sym)
@@ -463,7 +499,14 @@ def start_open(body):
     pv = preview(sym, side, body["percent"], body.get("leverage"))
     if not pv["ok"]: raise ValueError("size too small: " + "; ".join(pv["warn"]))
     sl = opt_px(body.get("sl")); tp = opt_px(body.get("tp"))
+    # SL is on by default (19 Oct 2026): an open without a stop needs the explicit confirm_no_sl flag from the UI's second confirmation.
+    if sl is None and body.get("confirm_no_sl") is not True:
+        raise ValueError("stop-loss required: enter an SL price, or untick 'Use stop-loss' and confirm opening WITHOUT a stop")
     return _launch(Job("open", sym, pct=pv["pct"], side=side, qty=pv["qty"], lev=pv["leverage"], sl=sl, tp=tp))
+
+def dismiss_alerts():
+    with NET_LOCK: n = len(NET_ALERTS); NET_ALERTS.clear()
+    return {"dismissed": n}
 
 def cancel_order(sym, oid):
     t = C.Trader(not DRY, ACCOUNT)
@@ -618,6 +661,7 @@ class H(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 2) or "{}")
             if p == "/api/close": return self.send(200, start_close(str(body["symbol"]), body["percent"]).view())
             if p == "/api/open": return self.send(200, start_open(body).view())
+            if p == "/api/dismiss_alerts": return self.send(200, dismiss_alerts())
             if p == "/api/cancel":
                 j = JOBS.get(body.get("id"))
                 if not j: return self.send(404, {"error": "no such job"})
@@ -649,7 +693,7 @@ def main():
         if a.host not in ("0.0.0.0", ""): ALLOWED_HOSTS.add(a.host)
     if not ACCOUNT: sys.exit("BULK_ACCOUNT missing (put agent.env next to panel.py)")
     if not DRY and not os.environ.get("BULK_AGENT_PRIVATE_KEY"): sys.exit("BULK_AGENT_PRIVATE_KEY missing")
-    eq_load()
+    eq_load(); _net_load()
     print("Bulk maker panel %son http://%s:%d  (Ctrl+C to stop)" % ("(DRY-RUN) " if DRY else "", a.host, a.port), flush=True)
     if LAN and not PUBLIC:
         url = "http://%s:%d/m?t=%s" % (lan_ip(), a.port, TOKEN)

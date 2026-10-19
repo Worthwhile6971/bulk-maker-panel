@@ -68,7 +68,7 @@ details summary{color:var(--mu);font-size:12px;margin-top:6px}pre{white-space:pr
  <label>Size (% of available margin × leverage)</label>
  <div class="grid g5" id="pcts"></div>
  <div class="cust"><input id="pctC" type="number" inputmode="decimal" placeholder="Custom %"><button id="pctSet">Set</button></div>
- <div class="grid g2"><div><label>Stop-loss (optional)</label><input id="sl" type="number" inputmode="decimal" placeholder="price"></div>
+ <div class="grid g2"><div><label>Stop-loss <label style="display:inline;font-weight:400"><input id="usesl" type="checkbox" checked> on</label></label><input id="sl" type="number" inputmode="decimal" placeholder="price (required)"></div>
  <div><label>Take-profit (optional)</label><input id="tp" type="number" inputmode="decimal" placeholder="price"></div></div>
  <div id="pv" class="mu" style="margin-top:10px">–</div>
  <button class="prim" id="go" style="width:100%;margin-top:10px;min-height:52px">Preview</button>
@@ -118,9 +118,11 @@ async function preview(){const n=++pvSeq;try{const d=await api(`/api/preview?sym
  $('pv').innerHTML=`${S.pct}% → <b>${px(d.qty)}</b> ${esc(S.sym.split('-')[0])} ≈ <b>${usd(d.notional,0)}</b> @ ${px(d.price)} · margin ${usd(d.margin,0)}${loss?` · loss at SL <span class=neg>${usd(loss)}</span>`:''}`+(d.warn.length?`<div class=warn>${d.warn.map(esc).join('<br>')}</div>`:'')}catch(e){$('pv').textContent='Preview error: '+e.message}}
 $('sl').oninput=preview;
 $('go').onclick=async()=>{await preview();const d=lastPv;if(!d)return;if(!d.ok)return toast('Size too small');
- const sl=$('sl').value,tp=$('tp').value;const loss=sl?Math.abs(d.price-+sl)*d.qty:null;
+ const sl=$('sl').value,tp=$('tp').value,useSl=$('usesl').checked;
+ if(useSl&&!sl){toast('Enter a stop-loss (or switch SL off to open without one)');$('sl').focus();return}
+ if(!sl&&!confirm('Open WITHOUT a stop-loss? The position will be UNPROTECTED.'))return;const loss=sl?Math.abs(d.price-+sl)*d.qty:null;
  ask(`${S.side==='long'?'Long':'Short'} ${S.sym}`,[['Size',`${px(d.qty)} (${S.pct}%)`],['Notional',usd(d.notional,0)],['Price','~'+px(d.price)+' (rests at touch)'],['Leverage',d.leverage+'x'],['Margin',usd(d.margin,0)],['Stop-loss',sl||'NONE'],['Take-profit',tp||'–'],['Loss at SL',loss?usd(loss):'–'],['Order','ALO post-only (maker)']],
-  sl?'':'<b style="color:#ef4444">No stop-loss set.</b>',()=>api('/api/open',{symbol:S.sym,side:S.side,percent:S.pct,leverage:+$('lev').value,sl:sl||null,tp:tp||null}),S.side==='short')};
+  sl?'':'<b style="color:#ef4444">No stop-loss set.</b>',()=>api('/api/open',{symbol:S.sym,side:S.side,percent:S.pct,leverage:+$('lev').value,sl:sl||null,tp:tp||null,confirm_no_sl:!sl}),S.side==='short')};
 
 function closeP(sym,pct){pct=+pct;if(!(pct>0&&pct<=100))return toast('Enter 1–100%');
  ask(`Close ${pct}% of ${sym}`,[['Order','reduce-only ALO at touch'],['Fee','maker']],'',()=>api('/api/close',{symbol:sym,percent:pct}))}
@@ -131,6 +133,8 @@ document.body.addEventListener('click',e=>{const b=e.target.closest('button[data
 
 async function refresh(){
  try{const d=await api('/api/summary');S.dry=d.dry;$('mode').textContent=d.dry?'DRY-RUN':'LIVE';$('mode').className='pill '+(d.dry?'dry':'live');$('acc').textContent=d.account;
+  {const na=d.netAlerts||[];let b=$('netal');if(!b){b=document.createElement('div');b.id='netal';b.className='card';b.style.cssText='background:#2a0d0d;color:#fecaca;font-weight:600';$('pos').before(b)}
+   b.style.display=na.length?'block':'none';b.innerHTML=na.map(a=>'⚠ '+esc(a.text)).join('<br>')+(na.length?' <button onclick="api(\'/api/dismiss_alerts\',{}).then(refresh)">Dismiss</button>':'')}
   $('eq').textContent=usd(d.equity);$('av').textContent=usd(d.available);$('up').innerHTML=`<span class=${sg(d.upnl)}>${usd(d.upnl)}</span>`;
   const keep={};document.querySelectorAll('[id^=cc_]').forEach(i=>keep[i.id]=i.value);
   $('pos').innerHTML=d.positions.length?d.positions.map((p,i)=>`<div class=card><div class=row><div><b>${esc(p.symbol)}</b> <span class="${p.side==='LONG'?'pos':'neg'}">${p.side}</span> <span class=mu>${esc(p.leverage)}x</span></div>

@@ -131,11 +131,42 @@ class Trader:
         else:                  # long: fire when mark >= tp (d=true); short: mark <= tp
             a = {"type": "take_profit", "symbol": symbol, "is_buy": bool(is_long), "size": sz,
                  "trigger_price": float(tp), "iso": iso}
-        assert a["type"] in ("range", "stop", "take_profit")
+        assert_protective(a, is_long, sz)
+        return self._send(a)
+
+    def place_reduce_ioc(self, symbol, is_buy, px, sz, iso):
+        """EMERGENCY ONLY (risk_guard.flatten_unprotected after 3 failed stop placements and an unfilled
+        maker ALO): reduce-only IOC limit at a collared price. The only taker path besides exchange stops."""
+        a = {"type": "order", "symbol": symbol, "is_buy": is_buy, "price": px, "size": sz,
+             "order_type": {"type": "limit", "tif": "IOC"}, "reduce_only": True, "iso": iso}
+        assert a["order_type"]["tif"] == "IOC" and a["reduce_only"] is True and sz > 0
         return self._send(a)
 
     def cancel(self, symbol, oid):
         return self._send({"type": "cancel", "symbol": symbol, "order_id": oid})
+
+# Bulk conditional orders (stop / take_profit / range) are REDUCE-ONLY BY EXCHANGE DESIGN: "Reduce-only: Always.
+# Cannot open new positions" (https://docs.bulk.trade/bulk-exchange/conditional-orders, checked 2026-10-19). The wire
+# format (st/tp/rng: c,d,sz,tr,lim,i) has NO reduce-only field, so none can be sent; bulk_keychain 0.1.30 encodes the same
+# fields. Live evidence 2026-10-19 15:0x SGT: the SOL-USD stop shows reduceOnly=true in fullAccount.openOrders.
+# assert_protective() enforces the shape; verify_reduce_only() checks the exchange's reduceOnly flag after placement.
+REDUCE_ONLY_BY_EXCHANGE = ("stop", "take_profit", "range")
+def assert_protective(a, is_long, sz):
+    assert a["type"] in REDUCE_ONLY_BY_EXCHANGE, f"not a reduce-only conditional type: {a['type']}"
+    assert "reduce_only" not in a or a["reduce_only"] is True, "protective order must never be reduce_only=False"
+    assert "order_type" not in a, "protective order must not carry an open/limit order_type"
+    assert float(sz) > 0, "protective size must be > 0"
+    if a["type"] == "stop":   # a stop always trades AGAINST the position (long -> sell, short -> buy)
+        assert a["is_buy"] is (not is_long), "stop side must close the position"
+    return True
+def verify_reduce_only(fa, symbol):
+    """Exchange-side check: every stop/tp/range order on `symbol` must report reduceOnly true. Returns list of offenders."""
+    bad = []
+    for o in fa.get("openOrders", []) or []:
+        if o.get("symbol") == symbol and str(o.get("orderType", "")).lower() in ("stop", "range", "trailing", "take_profit") \
+                and o.get("reduceOnly") is not True:
+            bad.append(o.get("orderId"))
+    return bad
 
 def status_kinds(res):
     return [list(s.keys())[0] for s in res.get("statuses", []) if isinstance(s, dict)]
