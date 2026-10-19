@@ -362,7 +362,8 @@ def open_risk(key, fa):
     return round(tot, 2), parts
 
 def risk_view(key, fa, equity):
-    rk = RISK[key]; st = rk.evaluate(equity)
+    rk = RISK[key]; m = fa.get("margin", {}) or {}
+    st = rk.rebuild(equity, fnum(m.get("unrealizedPnl")), history(key, "positions", 1000), history(key, "activityHistory", 200))
     cur, parts = open_risk(key, fa)
     return {**st, **rk.describe(equity), "openRisk": cur, "openRiskParts": parts, "alerts": rk.alerts[-10:]}
 
@@ -417,8 +418,15 @@ def preview(key, sym, side, pct, lev, sl=None):
     per_trade = rk.trade_risk_usd(equity); risk_at_sl = None; sized_by = "margin %"
     if sl and abs(px - sl) > 0:
         if per_trade is not None:
+            # risk-sized account: qty = risk$ / stop distance; the % slider is ignored. Only real cap = available margin
+            # (minus buffer) x the account's max leverage for this coin. Bulk's minimum is compared to NOTIONAL, never to risk$.
             rq = round(C.floor_to(per_trade / abs(px - sl), lot), 8)
-            if rq < qty: qty = rq; sized_by = "%g%% risk ($%.2f of $%.2f equity)" % (rk.risk_pct, per_trade, equity)
+            lev = acct_lev
+            mq = round(C.floor_to(avail * (1 - buf) * lev / px, lot), 8)
+            qty = min(rq, mq)
+            sized_by = "%g%% risk ($%.2f of $%.2f equity) @ stop %.2f%% away" % (rk.risk_pct, per_trade, equity, abs(px - sl) / px * 100)
+            if mq < rq: sized_by += "; CAPPED by margin (max $%.0f notional at %gx)" % (mq * px, lev); warn.append(
+                "margin cap: full 1%% risk needs $%.0f notional, max is $%.0f at %gx" % (rq * px, mq * px, lev))
         risk_at_sl = qty * abs(px - sl)
     elif per_trade is not None:
         qty = 0.0; warn.append("%s sizes by %g%% risk: enter a stop-loss to size the trade" % (ACCT_LABEL[key], rk.risk_pct))
@@ -427,7 +435,8 @@ def preview(key, sym, side, pct, lev, sl=None):
     if not cap_ok:
         warn.append("open risk $%.2f + this $%.2f > cap $%.2f (%g%% of $%.0f)%s" % (cur_risk, risk_at_sl, cap, rk.cap_pct,
                     rk.base_usd if rk.mode == "fixed" else equity, " - BLOCKED" if rk.enforce_cap else " - warning only on main"))
-    halted, hinfo = rk.read_halt()
+    try: _st = rk.rebuild(equity, fnum(m.get("unrealizedPnl")), history(key, "positions", 1000), history(key, "activityHistory", 200)); halted, hinfo = _st["halted"], _st["halt"]
+    except Exception as e: halted, hinfo = True, {"reason": "halt state unavailable (%s); opens blocked" % type(e).__name__}
     if halted: warn.append("%s is HALTED: %s" % (ACCT_LABEL[key], (hinfo or {}).get("reason")))
     if qty * px < mn: warn.append("below min notional $%g" % mn)
     if lev < acct_lev: warn.append("Bulk account leverage for %s is %gx; lower selector only shrinks size" % (sym, acct_lev))

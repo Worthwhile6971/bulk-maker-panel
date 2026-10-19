@@ -53,5 +53,17 @@ class T(unittest.TestCase):
     def test_risk_sizing(self):
         self.assertEqual(P.RISK["challenge"].trade_risk_usd(100.0), 1.0); self.assertIsNone(P.RISK["main"].trade_risk_usd(2000))
         self.assertAlmostEqual(P.RISK["main"].cap_usd(5000), 60.9)
+    def test_rebuild_from_history(self):
+        import time as _t
+        r = P.RISK["challenge"]; now = _t.time(); ns = lambda x: str(int(x * 1e9))
+        # transfer of $100 in today, no trades -> no halt
+        st = r.rebuild(100.0, 0.0, [], [{"activityType": "transferInternal", "timestamp": ns(now - 60)}], now)
+        self.assertFalse(st["halted"]); self.assertEqual(st["dayStart"], 100.0)
+        # -$8 realized today then recovered to -$3 -> still halted (worst point), fresh process, no HALT file needed
+        import os
+        if os.path.exists(r.halt_file): os.remove(r.halt_file)
+        closed = [{"closeTime": ns(now - 50), "realizedPnl": -8, "fees": 0, "funding": 0}, {"closeTime": ns(now - 10), "realizedPnl": 5, "fees": 0, "funding": 0}]
+        os.remove(r.halt_file) if os.path.exists(r.halt_file) else None
+        st = r.rebuild(97.0, 0.0, closed, [], now); self.assertTrue(st["halted"]); os.remove(r.halt_file)
     def test_zz_nothing_sent(self): self.assertEqual(SENT, [])
 if __name__ == "__main__": unittest.main(verbosity=2)

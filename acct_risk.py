@@ -89,6 +89,41 @@ class AcctRisk:
         return {"halted": h, "halt": info, "dayPct": round(day, 2), "weekPct": round(week, 2), "ddPct": round(dd, 2),
                 "hwm": round(hwm, 2), "dayStart": round(d0, 2), "weekStart": round(w0, 2)}
 
+    def rebuild(self, eq, upnl, closed, activity, t=None):
+        """Halt state rebuilt from Bulk history (survives Render restarts; no disk needed, which is not free on Render).
+        Uses TRADING P&L only (closed positions: realizedPnl + fees + funding, plus current uPnL), so deposits, withdrawals
+        and internal transfers never move day/week P&L. Day/week use the WORST point of the period's realized curve, so a
+        halt stays on even if equity recovers. HWM is measured from the latest deposit/withdrawal/transfer (auto-rebase)."""
+        t = t or time.time(); ns = lambda x: int(x) / 1e9
+        rows = sorted(((ns(r.get("closeTime", 0)), float(r.get("realizedPnl") or 0) + float(r.get("fees") or 0) + float(r.get("funding") or 0))
+                       for r in closed or [] if r.get("closeTime")), key=lambda x: x[0])
+        flows = [ns(a.get("timestamp", 0)) for a in activity or [] if a.get("status", "completed") == "completed"
+                 and str(a.get("activityType", "")) in ("deposit", "withdraw", "withdrawal", "transferInternal", "transferExternal")]
+        real_now = eq - upnl
+        def period(b):
+            after = [p for ts, p in rows if ts >= b]; start = real_now - sum(after)
+            cur = start; worst = start; best = start
+            for p in after: cur += p; worst = min(worst, cur); best = max(best, cur)
+            return start, min(worst, eq), max(best, eq)
+        def at(ts):
+            lt = time.gmtime(ts + SGT); return ts - (lt.tm_hour * 3600 + lt.tm_min * 60 + lt.tm_sec)
+        d_b = at(t); w_b = d_b - time.gmtime(t + SGT).tm_wday * 86400
+        h_b = max(flows) if flows else 0.0
+        d0, dmin, _ = period(d_b); w0, wmin, _ = period(w_b); _, _, hwm = period(h_b)
+        pct = lambda a, b: (a / b - 1) * 100 if b > 0 else 0.0
+        trig = []
+        if eq > 0:
+            if pct(dmin, d0) <= -DAY_HALT_PCT: trig.append(("day", "day P&L hit %.2f%% (start $%.2f, low $%.2f)" % (pct(dmin, d0), d0, dmin), next_day_start(t)))
+            if pct(wmin, w0) <= -WEEK_HALT_PCT: trig.append(("week", "week P&L hit %.2f%% (start $%.2f, low $%.2f)" % (pct(wmin, w0), w0, wmin), next_week_start(t)))
+            if pct(eq, hwm) <= -HWM_DD_PCT: trig.append(("hwm", "drawdown %.2f%% from HWM $%.2f" % (pct(eq, hwm), hwm), None))
+        for kind, why, until in trig: self.write_halt(why, until, kind)
+        h, info = self.read_halt(t)
+        if trig and not h: h, info = True, {"reason": "; ".join(x[1] for x in trig), "kind": "rebuilt"}
+        return {"halted": h, "halt": info, "source": "bulk-history", "dayPct": round(pct(eq, d0), 2), "dayWorstPct": round(pct(dmin, d0), 2),
+                "weekPct": round(pct(eq, w0), 2), "weekWorstPct": round(pct(wmin, w0), 2), "ddPct": round(pct(eq, hwm), 2),
+                "hwm": round(hwm, 2), "hwmSince": _ts(h_b) if h_b else "all history", "dayStart": round(d0, 2), "weekStart": round(w0, 2),
+                "closedUsed": len(rows), "flowsSeen": len(flows)}
+
     def cap_usd(self, eq):
         base = self.base_usd if self.mode == "fixed" else eq
         return base * self.cap_pct / 100.0
