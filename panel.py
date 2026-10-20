@@ -415,6 +415,9 @@ def preview(key, sym, side, pct, lev, sl=None):
     warn = []
     # ---- per-account risk (20 Oct 2026) ----
     rk = RISK[key]; equity = fnum(m.get("totalMargin")); sl = fnum(sl, None) if sl not in (None, "", 0, "0") else None
+    stop_bad = bool(sl) and ((side == "short" and sl <= px) or (side == "long" and sl >= px))
+    if stop_bad: warn.append("stop %.4f is on the wrong side for a %s at %.4f (must be %s)" % (sl, side, px, "above" if side == "short" else "below"))
+    if equity <= 0: warn.append("%s equity reads $0 (balance not loaded?)" % ACCT_LABEL[key])
     per_trade = rk.trade_risk_usd(equity); risk_at_sl = None; sized_by = "margin %"
     if sl and abs(px - sl) > 0:
         if per_trade is not None:
@@ -427,6 +430,14 @@ def preview(key, sym, side, pct, lev, sl=None):
             sized_by = "%g%% risk ($%.2f of $%.2f equity) @ stop %.2f%% away" % (rk.risk_pct, per_trade, equity, abs(px - sl) / px * 100)
             if mq < rq: sized_by += "; CAPPED by margin (max $%.0f notional at %gx)" % (mq * px, lev); warn.append(
                 "margin cap: full 1%% risk needs $%.0f notional, max is $%.0f at %gx" % (rq * px, mq * px, lev))
+            # 20 Oct 2026 (Tom): never silently block on "size too small". If $risk / stop distance is under Bulk's min
+            # notional, round UP to the minimum tradeable size and show the risk it implies (still blocked by the 5% cap).
+            if qty * px < mn and mn > 0:
+                min_q = round(C.ceil_to(mn * 1.001 / px, lot), 8)
+                if min_q <= mq:
+                    qty = min_q; sized_by += "; ROUNDED UP to Bulk min $%g notional" % mn
+                    warn.append("min size %g (~$%.2f notional) risks $%.2f at stop = %.2f%% of equity (target %g%%)" % (
+                        qty, qty * px, qty * abs(px - sl), qty * abs(px - sl) / equity * 100 if equity > 0 else 0, rk.risk_pct))
         risk_at_sl = qty * abs(px - sl)
     elif per_trade is not None:
         qty = 0.0; warn.append("%s sizes by %g%% risk: enter a stop-loss to size the trade" % (ACCT_LABEL[key], rk.risk_pct))
@@ -440,7 +451,7 @@ def preview(key, sym, side, pct, lev, sl=None):
     if halted: warn.append("%s is HALTED: %s" % (ACCT_LABEL[key], (hinfo or {}).get("reason")))
     if qty * px < mn: warn.append("below min notional $%g" % mn)
     if lev < acct_lev: warn.append("Bulk account leverage for %s is %gx; lower selector only shrinks size" % (sym, acct_lev))
-    ok = qty > 0 and qty * px >= mn and not halted and (cap_ok or not rk.enforce_cap)
+    ok = qty > 0 and qty * px >= mn and not halted and not stop_bad and (cap_ok or not rk.enforce_cap)
     return {"acct": key, "acctLabel": ACCT_LABEL[key], "account": ACCT_LABEL[key] + " " + short(acct_pub(key)),
             "equity": equity, "riskAtSl": risk_at_sl, "perTradeRisk": per_trade, "sizedBy": sized_by, "openRisk": cur_risk,
             "riskCap": cap, "halted": halted,
