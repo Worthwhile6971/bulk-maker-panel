@@ -48,7 +48,7 @@ ACCT_LABEL = {"main": "MAIN", "challenge": "CHALLENGE"}
 CHALLENGE_NAME = os.environ.get("BULK_CHALLENGE_NAME", "Challenge")
 PUB = {}; PUB_T = [0.0]; PUB_LOCK = threading.Lock()
 RISK = {"main": AR.AcctRisk("main", HERE, "fixed", base_usd=float(os.environ.get("RISK_BASE_USD", "1218")), cap_pct=5.0, enforce_cap=False),
-        "challenge": AR.AcctRisk("challenge", HERE, "equity", risk_pct=1.0, cap_pct=5.0, enforce_cap=True)}
+        "challenge": AR.AcctRisk("challenge", HERE, "equity", risk_pct=1.0, cap_pct=100.0, enforce_cap=False)}   # 22 Oct 2026: risk % = slider, no cap
 def _discover():
     """Main = BULK_ACCOUNT. Challenge = the sub-account of main named CHALLENGE_NAME (from fullAccount.subAccounts).
     Optional BULK_CHALLENGE_ACCOUNT pins the pubkey, but it must still be listed as a sub-account of main."""
@@ -418,29 +418,30 @@ def preview(key, sym, side, pct, lev, sl=None):
     stop_bad = bool(sl) and ((side == "short" and sl <= px) or (side == "long" and sl >= px))
     if stop_bad: warn.append("stop %.4f is on the wrong side for a %s at %.4f (must be %s)" % (sl, side, px, "above" if side == "short" else "below"))
     if equity <= 0: warn.append("%s equity reads $0 (balance not loaded?)" % ACCT_LABEL[key])
-    per_trade = rk.trade_risk_usd(equity); risk_at_sl = None; sized_by = "margin %"
+    per_trade = rk.trade_risk_usd(equity, pct); rpct = pct if per_trade is not None else None; risk_at_sl = None; sized_by = "margin %"
     if sl and abs(px - sl) > 0:
         if per_trade is not None:
-            # risk-sized account: qty = risk$ / stop distance; the % slider is ignored. Only real cap = available margin
+            # risk-sized account (22 Oct 2026): qty = (equity x slider %) / stop distance, no cap. Only real cap = available margin
             # (minus buffer) x the account's max leverage for this coin. Bulk's minimum is compared to NOTIONAL, never to risk$.
             rq = round(C.floor_to(per_trade / abs(px - sl), lot), 8)
             lev = acct_lev
             mq = round(C.floor_to(avail * (1 - buf) * lev / px, lot), 8)
             qty = min(rq, mq)
-            sized_by = "%g%% risk ($%.2f of $%.2f equity) @ stop %.2f%% away" % (rk.risk_pct, per_trade, equity, abs(px - sl) / px * 100)
+            sized_by = "%g%% risk ($%.2f of $%.2f equity) @ stop %.2f%% away" % (rpct, per_trade, equity, abs(px - sl) / px * 100)
             if mq < rq: sized_by += "; CAPPED by margin (max $%.0f notional at %gx)" % (mq * px, lev); warn.append(
-                "margin cap: full 1%% risk needs $%.0f notional, max is $%.0f at %gx" % (rq * px, mq * px, lev))
+                "LEVERAGE LIMIT: %g%% risk needs $%.0f notional (%.1fx equity), max is $%.0f at %gx -> actual risk $%.2f (%.2f%%)" % (
+                rpct, rq * px, rq * px / equity if equity > 0 else 0, mq * px, lev, mq * abs(px - sl), mq * abs(px - sl) / equity * 100 if equity > 0 else 0))
             # 20 Oct 2026 (Tom): never silently block on "size too small". If $risk / stop distance is under Bulk's min
-            # notional, round UP to the minimum tradeable size and show the risk it implies (still blocked by the 5% cap).
+            # notional, round UP to the minimum tradeable size and show the risk it implies (challenge has no open-risk cap since 22 Oct 2026).
             if qty * px < mn and mn > 0:
                 min_q = round(C.ceil_to(mn * 1.001 / px, lot), 8)
                 if min_q <= mq:
                     qty = min_q; sized_by += "; ROUNDED UP to Bulk min $%g notional" % mn
                     warn.append("min size %g (~$%.2f notional) risks $%.2f at stop = %.2f%% of equity (target %g%%)" % (
-                        qty, qty * px, qty * abs(px - sl), qty * abs(px - sl) / equity * 100 if equity > 0 else 0, rk.risk_pct))
+                        qty, qty * px, qty * abs(px - sl), qty * abs(px - sl) / equity * 100 if equity > 0 else 0, rpct))
         risk_at_sl = qty * abs(px - sl)
     elif per_trade is not None:
-        qty = 0.0; warn.append("%s sizes by %g%% risk: enter a stop-loss to size the trade" % (ACCT_LABEL[key], rk.risk_pct))
+        qty = 0.0; warn.append("%s sizes by %g%% risk: enter a stop-loss to size the trade" % (ACCT_LABEL[key], pct))
     cur_risk, _ = open_risk(key, fa); cap = rk.cap_usd(equity)
     cap_ok = risk_at_sl is None or cur_risk + risk_at_sl <= cap + 1e-9
     if not cap_ok:
@@ -677,7 +678,7 @@ def start_open(body):
     halted, hinfo = RISK[key].read_halt()
     if halted: raise ValueError("%s is HALTED (%s); new opens blocked" % (ACCT_LABEL[key], (hinfo or {}).get("reason")))
     if RISK[key].trade_risk_usd(1.0) is not None and sl is None:
-        raise ValueError("%s requires a stop-loss (sized at %g%% risk)" % (ACCT_LABEL[key], RISK[key].risk_pct))
+        raise ValueError("%s requires a stop-loss (sized at the chosen %% risk)" % ACCT_LABEL[key])
     pv = preview(key, sym, side, body["percent"], body.get("leverage"), sl)
     if not pv["ok"]: raise ValueError("cannot open: " + ("; ".join(pv["warn"]) or "size too small"))
     # SL is on by default (19 Oct 2026): an open without a stop needs the explicit confirm_no_sl flag from the UI's second confirmation.

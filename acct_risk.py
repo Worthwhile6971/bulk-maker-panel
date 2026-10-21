@@ -128,9 +128,10 @@ class AcctRisk:
         base = self.base_usd if self.mode == "fixed" else eq
         return base * self.cap_pct / 100.0
 
-    def trade_risk_usd(self, eq):
-        """Max $ loss at SL per trade (None = not enforced, main keeps its % of margin sizing)."""
-        if self.mode == "equity" and self.risk_pct: return eq * self.risk_pct / 100.0
+    def trade_risk_usd(self, eq, pct=None):
+        """Max $ loss at SL per trade (None = not enforced, main keeps its % of margin sizing).
+        22 Oct 2026 (Caleb via Tom): equity-mode accounts risk the % Caleb picks per trade (pct), no cap."""
+        if self.mode == "equity" and (pct or self.risk_pct): return eq * float(pct or self.risk_pct) / 100.0
         return None
 
     def describe(self, eq):
