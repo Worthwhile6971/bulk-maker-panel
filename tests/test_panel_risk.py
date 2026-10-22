@@ -73,6 +73,9 @@ class T(unittest.TestCase):
         self.assertFalse(r.rebuild(99.0, 0.0, closed, [], now)["halted"])
         json.dump({"kind": "day", "reason": "old", "until": now + 9999}, open(r.halt_file, "w"))
         self.assertFalse(r.read_halt()[0]); self.assertFalse(os.path.exists(r.halt_file))   # stale day halt cleared
+        r.evaluate(200.0); self.assertFalse(r.evaluate(100.0)["halted"])   # -50% from HWM: no halt
+        json.dump({"kind": "hwm", "reason": "old"}, open(r.halt_file, "w")); self.assertFalse(r.read_halt()[0])
+        m = P.RISK["main"]; m.evaluate(1000.0); m.evaluate(1000.0); self.assertTrue(m.evaluate(700.0)["halted"]); os.remove(m.halt_file); m.alerts.clear()
         with self.assertRaises(ValueError): P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 50, "confirm_no_sl": True, "acct": "challenge"})
     def test_zz_nothing_sent(self): self.assertEqual(SENT, [])
 if __name__ == "__main__": unittest.main(verbosity=2)

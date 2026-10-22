@@ -31,7 +31,8 @@ def next_week_start(t):
 
 class AcctRisk:
     """mode 'fixed': sizing/cap off a fixed dollar base (main, $1,218). mode 'equity': per-trade risk = risk_pct of LIVE equity."""
-    def __init__(self, key, dirpath, mode, base_usd=None, risk_pct=None, cap_pct=5.0, enforce_cap=False, day_week_halts=True):
+    def __init__(self, key, dirpath, mode, base_usd=None, risk_pct=None, cap_pct=5.0, enforce_cap=False, day_week_halts=True, hwm_halt=True):
+        self.hwm_halt = hwm_halt   # 23 Oct 2026: False on challenge (Caleb approved)
         self.day_week_halts = day_week_halts   # 23 Oct 2026: False on challenge (Caleb via Tom)
         self.key = key; self.mode = mode; self.base_usd = base_usd; self.risk_pct = risk_pct
         self.cap_pct = cap_pct; self.enforce_cap = enforce_cap
@@ -55,7 +56,7 @@ class AcctRisk:
         info = _load(self.halt_file, None)
         if not isinstance(info, dict): info = {"reason": "manual HALT file", "manual": True}
         u = info.get("until")
-        if not self.day_week_halts and info.get("kind") in ("day", "week"):
+        if not self.day_week_halts and info.get("kind") in ("day", "week") or (not self.hwm_halt and info.get("kind") == "hwm"):
             try: os.remove(self.halt_file)
             except Exception: pass
             return False, None
@@ -89,7 +90,7 @@ class AcctRisk:
             if eq > 0:
                 if self.day_week_halts and day <= -DAY_HALT_PCT: self.write_halt("day P&L %.2f%% <= -7%%" % day, next_day_start(t), "day")
                 if self.day_week_halts and week <= -WEEK_HALT_PCT: self.write_halt("week P&L %.2f%% <= -20%%" % week, next_week_start(t), "week")
-                if dd <= -HWM_DD_PCT: self.write_halt("drawdown %.2f%% from HWM $%.2f" % (dd, hwm), None, "hwm")
+                if self.hwm_halt and dd <= -HWM_DD_PCT: self.write_halt("drawdown %.2f%% from HWM $%.2f" % (dd, hwm), None, "hwm")
             h, info = self.read_halt(t)
         return {"halted": h, "halt": info, "dayPct": round(day, 2), "weekPct": round(week, 2), "ddPct": round(dd, 2),
                 "hwm": round(hwm, 2), "dayStart": round(d0, 2), "weekStart": round(w0, 2)}
@@ -120,7 +121,7 @@ class AcctRisk:
         if eq > 0:
             if self.day_week_halts and pct(dmin, d0) <= -DAY_HALT_PCT: trig.append(("day", "day P&L hit %.2f%% (start $%.2f, low $%.2f)" % (pct(dmin, d0), d0, dmin), next_day_start(t)))
             if self.day_week_halts and pct(wmin, w0) <= -WEEK_HALT_PCT: trig.append(("week", "week P&L hit %.2f%% (start $%.2f, low $%.2f)" % (pct(wmin, w0), w0, wmin), next_week_start(t)))
-            if pct(eq, hwm) <= -HWM_DD_PCT: trig.append(("hwm", "drawdown %.2f%% from HWM $%.2f" % (pct(eq, hwm), hwm), None))
+            if self.hwm_halt and pct(eq, hwm) <= -HWM_DD_PCT: trig.append(("hwm", "drawdown %.2f%% from HWM $%.2f" % (pct(eq, hwm), hwm), None))
         for kind, why, until in trig: self.write_halt(why, until, kind)
         h, info = self.read_halt(t)
         if trig and not h: h, info = True, {"reason": "; ".join(x[1] for x in trig), "kind": "rebuilt"}

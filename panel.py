@@ -48,7 +48,7 @@ ACCT_LABEL = {"main": "MAIN", "challenge": "CHALLENGE"}
 CHALLENGE_NAME = os.environ.get("BULK_CHALLENGE_NAME", "Challenge")
 PUB = {}; PUB_T = [0.0]; PUB_LOCK = threading.Lock()
 RISK = {"main": AR.AcctRisk("main", HERE, "fixed", base_usd=float(os.environ.get("RISK_BASE_USD", "1218")), cap_pct=5.0, enforce_cap=False),
-        "challenge": AR.AcctRisk("challenge", HERE, "equity", risk_pct=1.0, cap_pct=100.0, enforce_cap=False, day_week_halts=False)}   # 22 Oct 2026: risk % = slider, no cap; 23 Oct 2026: day/week halts OFF (HWM halt kept)
+        "challenge": AR.AcctRisk("challenge", HERE, "equity", risk_pct=1.0, cap_pct=100.0, enforce_cap=False, day_week_halts=False, hwm_halt=False)}   # 22 Oct 2026: risk % = slider, no cap; 23 Oct 2026: day/week + HWM drawdown halts OFF
 def _discover():
     """Main = BULK_ACCOUNT. Challenge = the sub-account of main named CHALLENGE_NAME (from fullAccount.subAccounts).
     Optional BULK_CHALLENGE_ACCOUNT pins the pubkey, but it must still be listed as a sub-account of main."""
