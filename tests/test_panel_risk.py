@@ -45,17 +45,17 @@ class T(unittest.TestCase):
     def test_challenge_requires_sl(self):
         with self.assertRaises(ValueError): P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 10, "confirm_no_sl": True, "acct": "challenge"})
     def test_halt_per_account(self):
-        r = P.RISK["challenge"]; r.evaluate(100.0); st = r.evaluate(92.0)   # -8% day
-        self.assertTrue(st["halted"]); self.assertFalse(P.RISK["main"].read_halt()[0])
-        with self.assertRaises(ValueError): P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 10, "sl": 107, "acct": "challenge"})
-        P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 10, "sl": 107, "acct": "main"})
-        import os; os.remove(r.halt_file)
+        r = P.RISK["main"]; r.evaluate(1000.0); st = r.evaluate(920.0)   # -8% day on main -> halted
+        self.assertTrue(st["halted"]); self.assertFalse(P.RISK["challenge"].read_halt()[0])
+        with self.assertRaises(ValueError): P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 10, "sl": 107, "acct": "main"})
+        P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 10, "sl": 107, "acct": "challenge"})
+        import os; os.remove(r.halt_file); r.alerts.clear()
     def test_risk_sizing(self):
         self.assertEqual(P.RISK["challenge"].trade_risk_usd(100.0), 1.0); self.assertIsNone(P.RISK["main"].trade_risk_usd(2000))
         self.assertAlmostEqual(P.RISK["main"].cap_usd(5000), 60.9)
     def test_rebuild_from_history(self):
         import time as _t
-        r = P.RISK["challenge"]; now = _t.time(); ns = lambda x: str(int(x * 1e9))
+        r = P.RISK["main"]; now = _t.time(); ns = lambda x: str(int(x * 1e9))
         # transfer of $100 in today, no trades -> no halt
         st = r.rebuild(100.0, 0.0, [], [{"activityType": "transferInternal", "timestamp": ns(now - 60)}], now)
         self.assertFalse(st["halted"]); self.assertEqual(st["dayStart"], 100.0)
@@ -64,6 +64,15 @@ class T(unittest.TestCase):
         if os.path.exists(r.halt_file): os.remove(r.halt_file)
         closed = [{"closeTime": ns(now - 50), "realizedPnl": -8, "fees": 0, "funding": 0}, {"closeTime": ns(now - 10), "realizedPnl": 5, "fees": 0, "funding": 0}]
         os.remove(r.halt_file) if os.path.exists(r.halt_file) else None
-        st = r.rebuild(97.0, 0.0, closed, [], now); self.assertTrue(st["halted"]); os.remove(r.halt_file)
+        st = r.rebuild(97.0, 0.0, closed, [], now); self.assertTrue(st["halted"]); os.remove(r.halt_file); r.alerts.clear()
+    def test_challenge_no_day_week_halt(self):
+        import time as _t, os, json
+        r = P.RISK["challenge"]; now = _t.time(); ns = lambda x: str(int(x * 1e9))
+        r.evaluate(100.0); st = r.evaluate(85.0); self.assertFalse(st["halted"])   # -15% day: no halt
+        closed = [{"closeTime": ns(now - 50), "realizedPnl": -15, "fees": 0, "funding": 0}, {"closeTime": ns(now - 10), "realizedPnl": 14, "fees": 0, "funding": 0}]
+        self.assertFalse(r.rebuild(99.0, 0.0, closed, [], now)["halted"])
+        json.dump({"kind": "day", "reason": "old", "until": now + 9999}, open(r.halt_file, "w"))
+        self.assertFalse(r.read_halt()[0]); self.assertFalse(os.path.exists(r.halt_file))   # stale day halt cleared
+        with self.assertRaises(ValueError): P.start_open({"symbol": "SOL-USD", "side": "short", "percent": 50, "confirm_no_sl": True, "acct": "challenge"})
     def test_zz_nothing_sent(self): self.assertEqual(SENT, [])
 if __name__ == "__main__": unittest.main(verbosity=2)
