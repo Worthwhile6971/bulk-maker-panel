@@ -47,4 +47,8 @@ class D(unittest.TestCase):
             with self.assertRaises(ValueError): X.delegate_tx()
         X._node_json = lambda c: dict(ok, simulation={"err": "boom"})
         with self.assertRaises(ValueError): X.delegate_tx()
+class R(unittest.TestCase):
+    def test_relay_input_checks(self):
+        with self.assertRaises(ValueError): X.delegate_relay({})
+        with self.assertRaises(ValueError): X.delegate_relay({"signed": "A" * 5000})
 if __name__ == "__main__": unittest.main()

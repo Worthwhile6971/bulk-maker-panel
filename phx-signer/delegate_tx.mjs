@@ -26,6 +26,25 @@ export function verifyWire(wire) {
   for (const k of keys) if (!ALLOWED.has(k)) throw new Error("unexpected account " + k);
   return { program: PROGRAM, accounts: acc, signers: [OWNER], data: IX_DATA_HEX };
 }
+import { createPublicKey, verify as edVerify } from "node:crypto";
+import { getAddressEncoder } from "@solana/kit";
+export function ownerSigValid(wire) {
+  const tx = getTransactionDecoder().decode(wire); const sig = tx.signatures[OWNER];
+  if (!sig) return false;
+  const pk = Buffer.from(getAddressEncoder().encode(address(OWNER)));
+  const key = createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), pk]), format: "der", type: "spki" });
+  return edVerify(null, Buffer.from(tx.messageBytes), key, Buffer.from(sig));
+}
+// Relay a tx ALREADY SIGNED by the owner in his wallet. Only the validated DelegateTrader tx is accepted.
+export async function relay(b64) {
+  const wire = new Uint8Array(Buffer.from(b64, "base64"));
+  verifyWire(wire);
+  if (!ownerSigValid(wire)) throw new Error("owner signature missing or invalid");
+  const rpc = createSolanaRpc(RPC_URL);
+  const sim = await rpc.simulateTransaction(b64, { encoding: "base64", sigVerify: true, commitment: "confirmed" }).send();
+  if (sim.value.err) throw new Error("simulation failed: " + JSON.stringify(sim.value.err, (_, v) => typeof v === "bigint" ? String(v) : v));
+  return { signature: String(await rpc.sendTransaction(b64, { encoding: "base64", preflightCommitment: "confirmed", maxRetries: 5n }).send()) };
+}
 export async function authority() {
   const a = await createSolanaRpc(RPC_URL).getAccountInfo(address(TRADER_ACCT), { encoding: "base64", commitment: "confirmed" }).send();
   const t = decodeTrader(Buffer.from(a.value.data[0], "base64"));
@@ -50,6 +69,6 @@ export async function build() {
 }
 if (process.argv[1]?.endsWith("delegate_tx.mjs")) {
   const cmd = process.argv[2];
-  try { console.log(JSON.stringify(cmd === "authority" ? await authority() : cmd === "build" ? await build() : (() => { throw new Error("usage"); })())); }
+  try { console.log(JSON.stringify(cmd === "authority" ? await authority() : cmd === "build" ? await build() : cmd === "relay" ? await relay(process.env.SIGNED_TX || "") : (() => { throw new Error("usage"); })())); }
   catch (e) { console.log(JSON.stringify({ error: String(e.message || e).slice(0, 300) })); process.exit(1); }
 }

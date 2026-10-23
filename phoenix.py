@@ -131,9 +131,10 @@ def cancel(body):
     return submit(dict(body, kind="cancel"))
 
 # ---- owner re-delegation helper (no key; Caleb signs in Solflare) ----
-def _node_json(cmd):
+def _node_json(cmd, extra=None):
     if not shutil.which("node") or not os.path.isdir(os.path.join(SDIR, "node_modules")): raise PermissionError("node/phx-signer deps unavailable")
     env = {k: os.environ[k] for k in ("PATH", "HOME", "PHOENIX_RPC_URL", "PHOENIX_API") if k in os.environ}
+    env.update(extra or {})
     r = subprocess.run(["node", "delegate_tx.mjs", cmd], cwd=SDIR, env=env, capture_output=True, text=True, timeout=60)
     d = json.loads((r.stdout or "{}").strip().splitlines()[-1])
     if d.get("error"): raise ValueError(d["error"])
@@ -148,3 +149,8 @@ def delegate_tx():
         raise ValueError("delegate tx failed validation")
     if (d.get("simulation") or {}).get("err"): raise ValueError("delegate tx simulation failed: %s" % d["simulation"]["err"])
     return d
+def delegate_relay(body):
+    """Relay Caleb's wallet-signed DelegateTrader tx (signTransaction fallback). Node re-validates + checks owner signature + simulates."""
+    t = str(body.get("signed") or "")
+    if not t or len(t) > 4000: raise ValueError("signed tx required")
+    return _node_json("relay", {"SIGNED_TX": t})

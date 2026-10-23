@@ -881,6 +881,7 @@ def phx_get(op, q):
     raise KeyError("unknown phoenix op " + op)
 def phx_post(op, body):
     if op == "simulate": return PHX.simulate(body)
+    if op == "delegate_relay": return PHX.delegate_relay(body)
     if op == "submit": return PHX.submit(body)
     if op == "cancel": return PHX.cancel(body)
     raise KeyError("unknown phoenix op " + op)

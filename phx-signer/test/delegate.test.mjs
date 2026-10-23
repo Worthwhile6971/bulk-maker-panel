@@ -13,3 +13,5 @@ test("wrong data refused", () => assert.throws(() => verifyWire(mk({ data: "0300
 test("extra instruction (transfer) refused", () => assert.throws(() => verifyWire(mk({ extra: [{ programAddress: address("11111111111111111111111111111111"), data: new Uint8Array([2, 0, 0, 0]), accounts: [{ address: address(OWNER), role: 3 }, { address: address(DELEGATE), role: 1 }] }] }))));
 test("other fee payer refused", () => assert.throws(() => verifyWire(mk({ payer: DELEGATE, accs: [[OWNER, 2], [TRADER_ACCT, 1], [DELEGATE, 0]] }))));
 test("missing delegate refused", () => assert.throws(() => verifyWire(mk({ accs: [[OWNER, 3], [TRADER_ACCT, 1]] }))));
+import { ownerSigValid } from "../delegate_tx.mjs";
+test("unsigned tx has no valid owner signature", () => assert.equal(ownerSigValid(mk()), false));
