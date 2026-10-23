@@ -84,8 +84,10 @@ export async function handle(b, deps = {}) {
   const s = await signer();
   const { ixs, plan } = await buildIxs(b);
   const bh = await rpc.getLatestBlockhash({ commitment: "confirmed" }).send();
+  const cu = new Uint8Array(5); cu[0] = 2; new DataView(cu.buffer).setUint32(1, 600_000, true);   // SetComputeUnitLimit only (no price)
+  const cuIx = { programAddress: address("ComputeBudget111111111111111111111111111111"), accounts: [], data: cu };
   const msg = pipe(createTransactionMessage({ version: 0 }), (t) => setTransactionMessageFeePayerSigner(s, t),
-    (t) => setTransactionMessageLifetimeUsingBlockhash(bh.value, t), (t) => appendTransactionMessageInstructions(ixs.map((ix) => addSignersToInstruction([s], ix)), t));
+    (t) => setTransactionMessageLifetimeUsingBlockhash(bh.value, t), (t) => appendTransactionMessageInstructions([cuIx, ...ixs.map((ix) => addSignersToInstruction([s], ix))], t));
   const signed = await signTransactionMessageWithSigners(msg);
   const wire = getBase64EncodedWireTransaction(signed);
   const sim = await rpc.simulateTransaction(wire, { encoding: "base64", commitment: "processed", sigVerify: true }).send();
