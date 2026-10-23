@@ -66,7 +66,7 @@ def preview(sym, side, size_usd, px, sl, tp=None):
     m = _mk(sym); bk = book(sym); sl = float(sl)
     tick = m["tickSize"] * 10 ** m["baseLotsDecimals"] / QUOTE if m["baseLotsDecimals"] >= 0 else m["tickSize"] / (10 ** -m["baseLotsDecimals"] * QUOTE)
     if px in (None, ""): px = bk["bid"] if side == "long" else bk["ask"]
-    px = float(px); px = (math.floor if side == "long" else math.ceil)(px / tick - 1e-9) * tick; px = round(px, 10)
+    px = float(px); n = px / tick; n = round(n) if abs(n - round(n)) < 1e-6 else (math.floor if side == "long" else math.ceil)(n); px = round(n * tick, 10)
     warn = []
     if side == "long" and bk["ask"] is not None and px >= bk["ask"]: raise ValueError("post-only bid %.6g would cross ask %.6g" % (px, bk["ask"]))
     if side == "short" and bk["bid"] is not None and px <= bk["bid"]: raise ValueError("post-only ask %.6g would cross bid %.6g" % (px, bk["bid"]))
