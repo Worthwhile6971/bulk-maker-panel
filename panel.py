@@ -806,6 +806,8 @@ class H(BaseHTTPRequestHandler):
                 b = open(os.path.join(HERE, "icon.png"), "rb").read()
                 self.send_response(200); self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
+            if p in ("/phx", "/phx/"): return self.send(200, html("phx.html"), "text/html; charset=utf-8")
+            if p.startswith("/api/phx/"): return self.send(200, phx_get(p[9:], q))
             if p == "/api/accounts": return self.send(200, {"accounts": accounts_view(), "dry": DRY})
             if p.startswith("/api/") and p not in ("/api/book", "/api/candles"):
                 k = q.get("acct"); acct_pub(k)   # 400 unless an account was explicitly chosen
@@ -845,6 +847,9 @@ class H(BaseHTTPRequestHandler):
         if not self._authed({}): return
         try:
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 2) or "{}")
+            if p.startswith("/api/phx/"):
+                try: return self.send(200, phx_post(p[9:], body))
+                except PermissionError as e: return self.send(403, {"error": str(e), "gate": PHX.gate()})
             k = body.get("acct"); acct_pub(k)   # every POST must name its account explicitly
             if p == "/api/close": return self.send(200, start_close(k, str(body["symbol"]), body["percent"]).view())
             if p == "/api/open": return self.send(200, start_open(body).view())
@@ -858,6 +863,19 @@ class H(BaseHTTPRequestHandler):
             self.send(404, {"error": "not found"})
         except (ValueError, KeyError) as e: self.send(400, {"error": str(e)})
         except Exception as e: self.send(500, {"error": repr(e)[:300]})
+
+import phoenix as PHX
+def phx_get(op, q):
+    if op == "gate": return PHX.gate()
+    if op == "markets": return {"markets": PHX.markets(), "gate": PHX.gate()}
+    if op == "account": return PHX.account()
+    if op == "book": return PHX.book(q["symbol"])
+    if op == "preview": return PHX.preview(q["symbol"], q.get("side", "long"), q.get("size", "50"), q.get("px"), q.get("sl"), q.get("tp"))
+    raise KeyError("unknown phoenix op " + op)
+def phx_post(op, body):
+    if op == "submit": return PHX.submit(body)
+    if op == "cancel": return PHX.cancel(body)
+    raise KeyError("unknown phoenix op " + op)
 
 def main():
     global DRY, DRY_ITERS

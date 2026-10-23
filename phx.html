@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Phoenix Maker</title>
+<style>body{font:14px system-ui;background:#0d1117;color:#e6edf3;margin:0;padding:10px}.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px;margin:8px 0}
+input,select,button{font:inherit;padding:6px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px}button{cursor:pointer}.pill{padding:2px 8px;border-radius:9px;background:#30363d}.bad{background:#8b1a1a}.ok{background:#1a6b2a}pre{white-space:pre-wrap;font-size:12px}table{width:100%;font-size:12px}a{color:#58a6ff}</style></head><body>
+<header><b>🔥 Phoenix Maker (post-only)</b> <a class=pill href="/">Venue: Phoenix ▸ Bulk</a> <span id=gate class=pill>…</span></header>
+<div class=card><b>Balances</b><div id=bal>…</div></div>
+<div class=card><b>New post-only order</b> (stop-loss required; exits reduce-only)<br>
+<select id=sym></select> <select id=side><option>long</option><option>short</option></select>
+<input id=size placeholder="size USD" value=50 size=6> <input id=px placeholder="limit px (blank=touch)" size=10> <input id=sl placeholder="stop-loss (required)" size=10> <input id=tp placeholder="take-profit" size=8>
+<button onclick=prev()>Dry-run preview</button> <label><input type=checkbox id=appr> I approve this order</label> <button id=sub onclick=submitO()>Submit</button><pre id=out></pre></div>
+<div class=card><b>Positions</b><div id=pos></div><b>Open orders</b><div id=ord></div></div>
+<script>
+const $=i=>document.getElementById(i);const api=async(p,b)=>{const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});const d=await r.json();if(!r.ok)throw new Error(d.error||r.status);return d};
+async function load(){const m=await api('/api/phx/markets');$('sym').innerHTML=m.markets.map(x=>`<option>${x.symbol}</option>`).join('');$('sym').value='SOL';
+ const g=m.gate;$('gate').textContent=g.live_enabled?'LIVE':'LIVE DISABLED'+(g.halt?' — HALT: '+g.halt:'');$('gate').className='pill '+(g.live_enabled?'ok':'bad');$('sub').disabled=!g.live_enabled;acct()}
+async function acct(){try{const a=await api('/api/phx/account');$('bal').innerHTML=`trader ${a.trader.slice(0,4)}..${a.trader.slice(-4)} (${a.state})<br>`+a.subaccounts.map(s=>`sub${s.sub}: $${s.collateral_usd.toFixed(2)} `+s.spot.map(c=>c.symbol+' '+c.balance).join(' ')).join('<br>');
+ $('pos').innerHTML=a.positions.length?'<table>'+a.positions.map(p=>`<tr><td>sub${p.sub}</td><td>${p.symbol}</td><td>${p.size}</td><td>SL ${p.sl?'✓':'✗'}</td></tr>`).join('')+'</table>':'none';
+ $('ord').innerHTML=a.orders.length?'<table>'+a.orders.map(o=>`<tr><td>${JSON.stringify(o)}</td><td><button onclick='cxl(${JSON.stringify(JSON.stringify(o))})'>Cancel</button></td></tr>`).join('')+'</table>':'none'}catch(e){$('bal').textContent='error: '+e.message}}
+const q=()=>({symbol:$('sym').value,side:$('side').value,size:$('size').value,px:$('px').value,sl:$('sl').value,tp:$('tp').value});
+async function prev(){try{$('out').textContent=JSON.stringify(await api('/api/phx/preview?'+new URLSearchParams(q())),null,1)}catch(e){$('out').textContent='✗ '+e.message}}
+async function submitO(){if(!$('sl').value)return alert('stop-loss required');if(!$('appr').checked||!confirm('Submit LIVE post-only order?'))return;try{$('out').textContent=JSON.stringify(await api('/api/phx/submit',Object.assign(q(),{approved:true,acct:'main'})))}catch(e){$('out').textContent='✗ '+e.message}}
+async function cxl(o){try{await api('/api/phx/cancel',{order:JSON.parse(o),acct:'main'})}catch(e){alert(e.message)}}
+load();setInterval(acct,15000);
+</script></body></html>
