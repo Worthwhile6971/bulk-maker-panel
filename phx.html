@@ -51,8 +51,10 @@ dialog{background:var(--card);color:var(--tx);border:1px solid var(--line);borde
  <div class=card><h2>Maker order ticket</h2>
   <div class=row><label>Market</label><select id=sym style="flex:1"></select></div>
   <div class=row><div class=seg style="flex:1"><button id=bL class="on l" onclick="setSide('long')">Long</button><button id=bS class=s onclick="setSide('short')">Short</button></div></div>
-  <div class=row><label>Size · % of sub0 collateral (notional USD)</label><div class=pcts id=pcts style="width:100%"></div>
-   <input id=size type=number min=1 step=any placeholder="size USD" style="flex:1" oninput="pickPct(0,true)"></div>
+  <div class=row><label>Quantity · <span id=qbase>BTC</span> (base coin) · lot step <b id=qstep style="color:var(--tx)">—</b></label>
+   <input id=qty type=number min=0 step=any placeholder="e.g. 0.001" style="flex:1"><button class=sm onclick="snapQty()" title="round down to lot size">Snap</button></div>
+  <div id=qerr class=warnt></div>
+  <div class=row><label>Leverage (for margin) · max <span id=lmax>—</span>x</label><input id=lev type=number min=1 step=any value=5 style="flex:1"></div>
   <div class=row><label>Limit price (blank = rest at touch: best bid long / best ask short)</label><input id=px type=number step=any placeholder="touch" style="flex:1"></div>
   <div class=row><label>Stop-loss (required · reduce-only position stop, fills as <b style="color:var(--y)">TAKER</b> on trigger)</label><input id=sl type=number step=any placeholder="SL price (required)" style="flex:1"></div>
   <div class=row><label>Take-profit (optional · for R check only)</label><input id=tp type=number step=any placeholder="TP price" style="flex:1"></div>
@@ -75,18 +77,23 @@ const usd=(n,d=2)=>n==null||isNaN(n)?'—':(n<0?'-$':'$')+f(Math.abs(n),d);
 const sg=n=>n>0?'pos':n<0?'neg':'';
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 async function api(p,b){const r=await fetch(p,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{});const j=await r.json();if(!r.ok)throw new Error(j.error||r.status);return j}
-let S={side:'long',pct:10,sym:'SOL',syms:[],chartSym:'SOL',gate:null,acct:null};
+let S={side:'long',pct:10,sym:'BTC',syms:[],chartSym:'BTC',gate:null,acct:null};
 const PCTS=[10,25,50,75,100];const ACCT='main';
-$('pcts').innerHTML=PCTS.map(p=>`<button data-p=${p} onclick="pickPct(${p})">${p}%</button>`).join('');
+
 const sub0=()=>S.acct?(S.acct.subaccounts.find(s=>s.sub===0)||{collateral_usd:0}):{collateral_usd:0};
+const mkt=()=>S.syms.find(x=>x.symbol==S.sym)||{};const lotOf=m=>Math.pow(10,-(m.baseLotsDecimals||0));const lotDp=m=>Math.max(0,m.baseLotsDecimals||0);
+function mktUI(){const m=mkt();$('qbase').textContent=S.sym;$('qstep').textContent=lotOf(m).toFixed(lotDp(m))+' '+S.sym;$('qty').step=lotOf(m);$('qty').min=lotOf(m);$('qty').placeholder='min '+lotOf(m).toFixed(lotDp(m));$('lmax').textContent=m.maxLeverage||'—';$('lev').max=m.maxLeverage||'';if(m.maxLeverage&&+$('lev').value>m.maxLeverage)$('lev').value=m.maxLeverage}
+function qtyCheck(){const m=mkt(),l=lotOf(m),v=+$('qty').value;if(!$('qty').value)return 'enter a quantity in '+S.sym;if(!(v>0))return 'quantity must be positive';const n=v/l;if(Math.abs(n-Math.round(n))>1e-6)return `not a multiple of lot ${l.toFixed(lotDp(m))} — press Snap (→ ${(Math.floor(n+1e-9)*l).toFixed(lotDp(m))})`;return null}
+function snapQty(){const m=mkt(),l=lotOf(m),v=+$('qty').value;if(v>0){const s=Math.floor(v/l+1e-9)*l;$('qty').value=s>0?s.toFixed(lotDp(m)):l.toFixed(lotDp(m))}preview()}
 function pickPct(p,custom){if(!custom){S.pct=p;$('size').value=Math.floor(sub0().collateral_usd*p/100*100)/100||''}else S.pct=0;document.querySelectorAll('#pcts button').forEach(b=>b.classList.toggle('on',+b.dataset.p===S.pct));preview()}
 function setSide(s){S.side=s;$('bL').className='l'+(s=='long'?' on':'');$('bS').className='s'+(s=='short'?' on':'');$('go').className=s;$('go').textContent='Open '+(s=='long'?'Long':'Short')+' (maker)';preview()}
 let lastPv=null;
-async function preview(){if(!$('sl').value){lastPv=null;$('pv').innerHTML='<span>Preview</span><span class=mut>enter a stop-loss</span>';$('pvw').textContent='Stop-loss is required for every Phoenix order';$('go').disabled=true;return}
- try{const d=await api('/api/phx/preview?'+new URLSearchParams({symbol:S.sym,side:S.side,size:$('size').value||'0',px:$('px').value,sl:$('sl').value,tp:$('tp').value}));lastPv=d;
- $('pv').innerHTML=`<span>Resting price</span><span>${f(d.price,4)} (${$('px').value?'limit':S.side=='long'?'best bid':'best ask'})</span><span>Book</span><span>${f(d.book.bid,4)} / ${f(d.book.ask,4)}</span><span>Quantity</span><span>${f(d.qty,6)} ${esc(S.sym)}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Type</span><span>${esc(d.type)}</span><span>Stop-loss</span><span>${f(d.sl,4)} (${esc(d.sl_exit)})</span><span>Risk at stop</span><span>${usd(d.risk_usd)}</span><span>R multiple</span><span>${d.r_multiple==null?'—':f(d.r_multiple,2)+'R'}</span><span>Maker fee</span><span>${usd(d.maker_fee_usd,4)}</span>`;
+async function preview(){const qe=qtyCheck();$('qerr').textContent=qe||'';if(qe){lastPv=null;$('pv').innerHTML='<span>Preview</span><span class=neg>'+esc(qe)+'</span>';$('pvw').textContent='';$('go').disabled=true;return}
+ if(!$('sl').value){lastPv=null;$('pv').innerHTML='<span>Preview</span><span class=mut>enter a stop-loss</span>';$('pvw').textContent='Stop-loss is required for every Phoenix order';$('go').disabled=true;return}
+ try{const d=await api('/api/phx/preview?'+new URLSearchParams({symbol:S.sym,side:S.side,qty:$('qty').value,lev:$('lev').value,px:$('px').value,sl:$('sl').value,tp:$('tp').value}));lastPv=d;
+ $('pv').innerHTML=`<span>Resting price</span><span>${f(d.price,4)} (${$('px').value?'limit':S.side=='long'?'best bid':'best ask'})</span><span>Book</span><span>${f(d.book.bid,4)} / ${f(d.book.ask,4)}</span><span>Quantity</span><span>${d.qty.toFixed(lotDp(mkt()))} ${esc(S.sym)} (${d.lots} lots)</span><span>Notional (read-only)</span><span>${usd(d.notional)}</span><span>Margin @ ${f(d.leverage,1)}x</span><span>${usd(d.margin_usd)}</span><span>Type</span><span>${esc(d.type)}</span><span>Stop-loss</span><span>${f(d.sl,4)} (${esc(d.sl_exit)})</span><span>Stop-loss risk</span><span class=neg>${usd(d.risk_usd)}</span><span>R multiple</span><span>${d.r_multiple==null?'—':f(d.r_multiple,2)+'R'}</span><span>Maker fee</span><span>${usd(d.maker_fee_usd,4)}</span>`;
  $('pvw').innerHTML=d.warn.map(esc).join('<br>');$('go').disabled=!(d.ok&&S.gate&&S.gate.live_enabled)}catch(e){lastPv=null;$('pv').innerHTML=`<span>Preview</span><span class=neg>${esc(e.message)}</span>`;$('pvw').textContent='';$('go').disabled=true}}
-['size','px','sl','tp'].forEach(i=>$(i).addEventListener('input',preview));
+['qty','lev','px','sl','tp'].forEach(i=>$(i).addEventListener('input',preview));
 // approval dialog: simulate first, Confirm only after a clean simulation AND the approve box
 async function ask(title,html,warn,order){$('dt').textContent='[Phoenix sub0] '+title;$('db').innerHTML='<span><b>ACCOUNT</b></span><span><b>Phoenix sub0 · delegate-signed</b></span>'+html;$('dw').innerHTML=warn||'';
  $('dappr').checked=false;$('dok').disabled=true;$('dsim').textContent='simulating signed transaction (not sent)…';let simOk=false;dlg.showModal();
@@ -95,7 +102,7 @@ async function ask(title,html,warn,order){$('dt').textContent='[Phoenix sub0] '+
  if(S.gate&&!S.gate.live_enabled)$('dw').innerHTML+='<br><b class=neg>LIVE SUBMIT DISABLED'+(S.gate.halt?' — halt: '+esc(S.gate.halt):'')+'</b>';upd();
  $('dok').onclick=async()=>{if(!(simOk&&$('dappr').checked))return;dlg.close();try{const r=await api(order.kind==='cancel'?'/api/phx/cancel':'/api/phx/submit',Object.assign({acct:ACCT},order,{approved:true}));$('out').textContent=JSON.stringify(r,null,1)}catch(e){$('out').textContent='✗ '+e.message;alert(e.message)}refresh()}}
 function confirmOpen(){const d=lastPv;if(!d)return;if(!$('sl').value){alert('Stop-loss is required');$('sl').focus();return}
- ask(`Open ${S.side.toUpperCase()} ${d.symbol} as MAKER`,`<span>Qty</span><span>${f(d.qty,6)}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Entry</span><span>Post-only @ ${f(d.price,4)}</span><span>Stop-loss</span><span>${f(d.sl,4)} (reduce-only)</span><span>Take-profit</span><span>${d.tp||'—'}</span><span>Risk at stop</span><span>${usd(d.risk_usd)}</span>`,
+ ask(`Open ${S.side.toUpperCase()} ${d.symbol} as MAKER`,`<span>Qty</span><span>${d.qty.toFixed(lotDp(mkt()))} ${esc(d.symbol)}</span><span>Notional</span><span>${usd(d.notional)}</span><span>Margin @ ${f(d.leverage,1)}x</span><span>${usd(d.margin_usd)}</span><span>Entry</span><span>Post-only @ ${f(d.price,4)}</span><span>Stop-loss</span><span>${f(d.sl,4)} (reduce-only)</span><span>Take-profit</span><span>${d.tp||'—'}</span><span>Risk at stop</span><span>${usd(d.risk_usd)}</span>`,
  'Post-only: rejected if it would cross. Place the stop with <b>Add stop</b> once the entry fills; the stop executes as taker when triggered.',{kind:'open',symbol:d.symbol,side:d.side,price:d.price,size:d.qty,sl:d.sl})}
 function closeP(sym,pct){if(!(pct>0&&pct<=100))return alert('1–100%');ask(`Close ${pct}% of ${sym}`,`<span>Order</span><span>reduce-only Post Only @ touch</span><span>Fee</span><span>maker</span>`,'',{kind:'close',symbol:sym,percent:pct})}
 function stopP(sym){const v=+$('s_'+sym).value;if(!v)return alert('Enter a stop price');ask(`Add stop ${sym} @ ${v}`,`<span>Order</span><span>reduce-only position stop (100%)</span><span>Trigger</span><span>${f(v,4)}</span>`,'Executes as taker (IOC) when triggered.',{kind:'protect',symbol:sym,sl:v})}
@@ -117,9 +124,9 @@ async function refresh(){
  }catch(e){$('banner').style.display='block';$('banner').textContent='Account API error: '+e.message}
  book()}
 setInterval(()=>{$('clock').textContent=new Date().toLocaleTimeString()},1000);
-$('sym').onchange=()=>{S.sym=$('sym').value;S.chartSym=S.sym;$('chartSym').value=S.sym;$('px').value='';book();preview()};
+$('sym').onchange=()=>{S.sym=$('sym').value;S.chartSym=S.sym;$('chartSym').value=S.sym;$('px').value='';$('sl').value='';$('tp').value='';mktUI();snapQty();book()};
 $('chartSym').onchange=()=>{S.chartSym=$('chartSym').value;book()};
 (async()=>{try{const m=await api('/api/phx/markets');S.syms=m.markets;S.gate=m.gate;const o=m.markets.map(x=>`<option>${esc(x.symbol)}</option>`).join('');$('sym').innerHTML=o;$('chartSym').innerHTML=o;
  if(!m.markets.some(x=>x.symbol==S.sym))S.sym=S.chartSym=m.markets[0].symbol;$('sym').value=S.sym;$('chartSym').value=S.sym}catch(e){$('banner').style.display='block';$('banner').textContent='Markets error: '+e.message}
- await refresh();pickPct(10);setInterval(refresh,10000);setInterval(preview,8000)})();
+ mktUI();await refresh();preview();setInterval(refresh,10000);setInterval(preview,8000)})();
 </script></body></html>

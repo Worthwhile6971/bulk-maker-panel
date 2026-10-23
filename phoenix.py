@@ -58,9 +58,10 @@ def account():
         for o in (a.get("orders") or a.get("limitOrders") or []):
             orders.append(dict(o, sub=a["subaccountIndex"]))
     return {"trader": TRADER, "state": (s.get("capabilities") or {}).get("state"), "subaccounts": subs, "positions": pos, "orders": orders}
-def preview(sym, side, size_usd, px, sl, tp=None):
-    """Dry-run post-only order. Never sends. Validates maker-only (no cross) and required SL."""
-    side = str(side).lower(); size_usd = float(size_usd)
+def preview(sym, side, size_usd, px, sl, tp=None, qty=None, lev=None):
+    """Dry-run post-only order. Never sends. Validates maker-only (no cross) and required SL.
+    qty (base units) takes precedence over size_usd; it must be a whole number of lots (no silent rounding)."""
+    side = str(side).lower(); size_usd = float(size_usd or 0)
     if side not in ("long", "short"): raise ValueError("side must be long or short")
     if sl in (None, ""): raise ValueError("stop-loss is required for Phoenix orders")
     m = _mk(sym); bk = book(sym); sl = float(sl)
@@ -71,9 +72,21 @@ def preview(sym, side, size_usd, px, sl, tp=None):
     if side == "long" and bk["ask"] is not None and px >= bk["ask"]: raise ValueError("post-only bid %.6g would cross ask %.6g" % (px, bk["ask"]))
     if side == "short" and bk["bid"] is not None and px <= bk["bid"]: raise ValueError("post-only ask %.6g would cross bid %.6g" % (px, bk["bid"]))
     if side == "long" and sl >= px or side == "short" and sl <= px: raise ValueError("stop-loss must be beyond entry")
-    if size_usd < 1: raise ValueError("size too small")
-    lot = 10 ** -m["baseLotsDecimals"]; qty = math.floor(size_usd / px / lot) * lot
-    if qty <= 0: raise ValueError("size below one lot")
+    lot = 10 ** -m["baseLotsDecimals"]
+    if qty not in (None, ""):
+        qty = float(qty)
+        if not qty > 0: raise ValueError("quantity must be positive")
+        nl = qty / lot
+        if abs(nl - round(nl)) > 1e-6: raise ValueError("quantity %g is not a multiple of the lot size %g" % (qty, lot))
+        qty = round(nl) * lot
+        if qty <= 0: raise ValueError("size below one lot (lot %g)" % lot)
+    else:
+        if size_usd < 1: raise ValueError("size too small")
+        qty = math.floor(size_usd / px / lot) * lot
+        if qty <= 0: raise ValueError("size below one lot")
+    mx = (m.get("leverageTiers") or [{}])[0].get("maxLeverage") or 1
+    lev = float(lev) if lev not in (None, "") else min(5.0, float(mx))
+    if not 0 < lev <= float(mx): raise ValueError("leverage must be between 0 and %gx for %s" % (mx, sym))
     risk = qty * abs(px - sl); r = None
     if tp not in (None, ""):
         tp = float(tp); r = abs(tp - px) / abs(px - sl)
@@ -81,7 +94,7 @@ def preview(sym, side, size_usd, px, sl, tp=None):
     g = gate()
     if not g["live_enabled"]: warn.append("LIVE SUBMIT DISABLED: " + (("halt: " + g["halt"]) if g["halt"] else "PHOENIX_TRADING_ENABLED not set"))
     return {"ok": True, "dry_run": True, "venue": "phoenix", "symbol": sym, "side": side, "type": "post-only limit",
-            "price": px, "tick": tick, "qty": round(qty, 10), "notional": round(qty * px, 4), "sl": sl, "sl_exit": "reduce-only stop",
+            "price": px, "tick": tick, "lot": lot, "qty": round(qty, 10), "lots": int(round(qty / lot)), "leverage": lev, "max_leverage": mx, "margin_usd": round(qty * px / lev, 4), "notional": round(qty * px, 4), "sl": sl, "sl_exit": "reduce-only stop",
             "tp": tp, "r_multiple": r, "risk_usd": round(risk, 4), "maker_fee_usd": round(qty * px * (m.get("makerFee") or 0), 4),
             "book": bk, "gate": g, "warn": warn}
 # ---- signer sidecar (Node, 127.0.0.1, random per-process token). Key only via env PHOENIX_DELEGATE_KEY. ----

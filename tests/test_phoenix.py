@@ -24,6 +24,14 @@ class T(unittest.TestCase):
     def test_preview_dry(self):
         p = X.preview("SOL", "long", 50, None, 95, 110)
         self.assertTrue(p["dry_run"]); self.assertEqual(p["price"], 100.0); self.assertGreater(p["qty"], 0); self.assertTrue(p["warn"])
+    def test_base_qty(self):
+        p = X.preview("SOL", "long", None, None, 95, None, qty="0.37", lev="4")
+        self.assertAlmostEqual(p["qty"], 0.37); self.assertEqual(p["lots"], 37); self.assertAlmostEqual(p["lot"], 0.01)
+        self.assertAlmostEqual(p["notional"], 37.0); self.assertAlmostEqual(p["margin_usd"], 9.25); self.assertAlmostEqual(p["risk_usd"], 1.85)
+        with self.assertRaises(ValueError): X.preview("SOL", "long", None, None, 95, None, qty="0.375")
+        with self.assertRaises(ValueError): X.preview("SOL", "long", None, None, 95, None, qty="0")
+        with self.assertRaises(ValueError): X.preview("SOL", "long", None, None, 95, None, qty="1", lev="50")
+        with self.assertRaises(ValueError): X.preview("SOL", "long", None, None, None, None, qty="1")
     def test_submit_always_refused(self):
         os.environ["PHOENIX_TRADING_ENABLED"] = "1"; os.environ["PHOENIX_HALT"] = "0"
         with self.assertRaises(ValueError): X.submit({"approved": False})

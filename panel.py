@@ -877,7 +877,7 @@ def phx_get(op, q):
     if op == "markets": return {"markets": PHX.markets(), "gate": PHX.gate()}
     if op == "account": return PHX.account()
     if op == "book": return PHX.book(q["symbol"])
-    if op == "preview": return PHX.preview(q["symbol"], q.get("side", "long"), q.get("size", "50"), q.get("px"), q.get("sl"), q.get("tp"))
+    if op == "preview": return PHX.preview(q["symbol"], q.get("side", "long"), q.get("size", "50"), q.get("px"), q.get("sl"), q.get("tp"), q.get("qty"), q.get("lev"))
     raise KeyError("unknown phoenix op " + op)
 def phx_post(op, body):
     if op == "simulate": return PHX.simulate(body)
