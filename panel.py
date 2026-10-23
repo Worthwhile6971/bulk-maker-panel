@@ -806,6 +806,10 @@ class H(BaseHTTPRequestHandler):
                 b = open(os.path.join(HERE, "icon.png"), "rb").read()
                 self.send_response(200); self.send_header("Content-Type", "image/png")
                 self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
+            if p in ("/phx/delegate", "/phx/delegate/"): return self.send(200, html("phx_delegate.html"), "text/html; charset=utf-8")
+            if p == "/phx/web3.js":
+                b = open(os.path.join(HERE, "phx-signer/node_modules/@solana/web3.js/lib/index.iife.min.js"), "rb").read()
+                self.send_response(200); self.send_header("Content-Type", "application/javascript"); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
             if p in ("/phx", "/phx/"): return self.send(200, html("phx.html"), "text/html; charset=utf-8")
             if p.startswith("/api/phx/"): return self.send(200, phx_get(p[9:], q))
             if p == "/api/accounts": return self.send(200, {"accounts": accounts_view(), "dry": DRY})
@@ -868,6 +872,8 @@ import phoenix as PHX
 def phx_get(op, q):
     if op == "gate": return PHX.gate()
     if op == "signer": return PHX.signer_health()
+    if op == "authority": return PHX.authority()
+    if op == "delegate_tx": return PHX.delegate_tx()
     if op == "markets": return {"markets": PHX.markets(), "gate": PHX.gate()}
     if op == "account": return PHX.account()
     if op == "book": return PHX.book(q["symbol"])

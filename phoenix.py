@@ -129,3 +129,22 @@ def submit(body):
     return signer_call("/order", _order(body, "send"))
 def cancel(body):
     return submit(dict(body, kind="cancel"))
+
+# ---- owner re-delegation helper (no key; Caleb signs in Solflare) ----
+def _node_json(cmd):
+    if not shutil.which("node") or not os.path.isdir(os.path.join(SDIR, "node_modules")): raise PermissionError("node/phx-signer deps unavailable")
+    env = {k: os.environ[k] for k in ("PATH", "HOME", "PHOENIX_RPC_URL", "PHOENIX_API") if k in os.environ}
+    r = subprocess.run(["node", "delegate_tx.mjs", cmd], cwd=SDIR, env=env, capture_output=True, text=True, timeout=60)
+    d = json.loads((r.stdout or "{}").strip().splitlines()[-1])
+    if d.get("error"): raise ValueError(d["error"])
+    return d
+DELEGATE = "B76zNWw7n45c65Rv3spyccMjr9VqkzWSdyRqsa8HXvJg"; OWNER = "tr3H9VuLVv9VsccPTcv7YJHEomDKZZPhULSV4bzkkGf"
+PHX_PROGRAM = "EtrnLzgbS7nMMy5fbD42kXiUzGg8XQzJ972Xtk1cjWih"; DELEGATE_DATA = "03a4c06a775b7ae0"
+def authority(): return _node_json("authority")
+def delegate_tx():
+    d = _node_json("build"); c = d.get("check") or {}
+    # independent re-check of the node verifier output before handing bytes to the browser
+    if c.get("program") != PHX_PROGRAM or c.get("data") != DELEGATE_DATA or c.get("signers") != [OWNER] or DELEGATE not in c.get("accounts", []):
+        raise ValueError("delegate tx failed validation")
+    if (d.get("simulation") or {}).get("err"): raise ValueError("delegate tx simulation failed: %s" % d["simulation"]["err"])
+    return d

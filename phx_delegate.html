@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>Phoenix: delegate sub0</title>
+<style>body{font:15px system-ui;background:#0d1117;color:#e6edf3;margin:0;padding:14px;max-width:640px}button{font:inherit;padding:12px 18px;border-radius:8px;border:0;background:#7c3aed;color:#fff;margin:6px 0}button:disabled{opacity:.4}.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px;margin:10px 0}code{word-break:break-all;font-size:12px}a{color:#58a6ff}.ok{color:#3fb950}.bad{color:#f85149}</style>
+<script src="/phx/web3.js"></script></head><body>
+<h2>Phoenix: set sub0 trading delegate</h2>
+<div class=card>Sets the <b>position authority</b> of Phoenix trader sub0 to <code>B76zNWw7n45c65Rv3spyccMjr9VqkzWSdyRqsa8HXvJg</code>.<br>
+Signer and fee payer: owner <code>tr3H9VuLVv9VsccPTcv7YJHEomDKZZPhULSV4bzkkGf</code>. One Phoenix instruction (DelegateTrader), no token or SOL transfers, fee ≈ 0.000005 SOL. It does not grant withdrawal rights.</div>
+<div class=card>Current: <span id=auth>…</span></div>
+<div class=card><button id=c onclick=conn()>1. Connect Solflare</button> <span id=w></span><br>
+<button id=s onclick=sign() disabled>2. Sign &amp; send in Solflare</button><pre id=o style="white-space:pre-wrap"></pre></div>
+<div class=card style="font-size:13px">On mobile: open your usual panel link (with ?t=) in the <b>Solflare app's built-in browser</b>, with <code>/phx/delegate</code> as the path.</div>
+<script>
+const OWNER="tr3H9VuLVv9VsccPTcv7YJHEomDKZZPhULSV4bzkkGf",$=i=>document.getElementById(i),log=t=>$('o').textContent=t;
+const prov=()=>window.solflare||(window.phantom&&window.phantom.solana)||window.solana;
+async function auth(){try{const r=await (await fetch('/api/phx/authority')).json();$('auth').innerHTML=r.error?('error: '+r.error):('positionAuthority <code>'+r.positionAuthority+'</code> '+(r.isDelegate?'<b class=ok>✓ delegate set</b>':'<b class=bad>(not the delegate yet)</b>'))}catch(e){$('auth').textContent=e}}
+async function conn(){const p=prov();if(!p)return log('No Solflare wallet found. Use the Solflare extension, or open this page in the Solflare app browser.');
+ try{await p.connect();const pk=(p.publicKey||{}).toString();$('w').textContent=pk.slice(0,4)+'..'+pk.slice(-4);
+ if(pk!==OWNER){$('s').disabled=true;return log('✗ Connected wallet is '+pk+', not the owner tr3H..kGf. Switch account in Solflare.')}
+ $('s').disabled=false;log('Owner wallet connected.')}catch(e){log('connect failed: '+(e.message||e))}}
+async function sign(){const p=prov();if(!p||(p.publicKey||'').toString()!==OWNER)return log('owner wallet not connected');$('s').disabled=true;log('building fresh transaction…');
+ try{const r=await fetch('/api/phx/delegate_tx');const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||r.status);
+  const tx=solanaWeb3.VersionedTransaction.deserialize(Uint8Array.from(atob(d.base64),c=>c.charCodeAt(0)));
+  const m=tx.message,keys=m.staticAccountKeys.map(k=>k.toBase58());
+  if(m.compiledInstructions.length!==1||keys[m.compiledInstructions[0].programIdIndex]!==d.check.program||keys[0]!==OWNER||m.header.numRequiredSignatures!==1)throw new Error('client-side check failed');
+  log('simulated OK on server. Approve in Solflare…');
+  const res=await p.signAndSendTransaction(tx);const sig=res.signature||res;const s=typeof sig==='string'?sig:solanaWeb3.PublicKey?bs58(sig):sig;
+  $('o').innerHTML='✓ sent. Signature: <code>'+s+'</code><br><a target=_blank href="https://solscan.io/tx/'+s+'">View on Solscan</a><br>Checking authority in 20s…';
+  setTimeout(auth,20000);setTimeout(auth,45000)}catch(e){log('✗ '+(e.message||e));$('s').disabled=false}}
+function bs58(b){const A='123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';let d=[],s='';for(const x of b){let c=x;for(let j=0;j<d.length;j++){c+=d[j]<<8;d[j]=c%58;c=c/58|0}while(c){d.push(c%58);c=c/58|0}}for(const x of b){if(x)break;s+='1'}for(let i=d.length-1;i>=0;i--)s+=A[d[i]];return s}
+auth();
+</script></body></html>

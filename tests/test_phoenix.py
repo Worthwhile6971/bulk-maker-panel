@@ -37,4 +37,14 @@ class T(unittest.TestCase):
     def test_no_signing_code(self):
         src = open(X.__file__).read()
         for bad in ("sendTransaction", "PRIVATE_KEY", "secret_key", "Keypair"): self.assertNotIn(bad, src)
+
+class D(unittest.TestCase):
+    def test_delegate_tx_validation(self):
+        ok = {"check": {"program": X.PHX_PROGRAM, "data": X.DELEGATE_DATA, "signers": [X.OWNER], "accounts": [X.DELEGATE]}, "simulation": {"err": None}, "base64": "x"}
+        X._node_json = lambda c: ok; self.assertEqual(X.delegate_tx()["base64"], "x")
+        for bad in ({"data": "00"}, {"signers": [X.DELEGATE]}, {"program": "x"}, {"accounts": []}):
+            X._node_json = lambda c, b=bad: dict(ok, check=dict(ok["check"], **b))
+            with self.assertRaises(ValueError): X.delegate_tx()
+        X._node_json = lambda c: dict(ok, simulation={"err": "boom"})
+        with self.assertRaises(ValueError): X.delegate_tx()
 if __name__ == "__main__": unittest.main()

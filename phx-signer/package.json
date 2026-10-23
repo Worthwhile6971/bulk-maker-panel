@@ -1,3 +1,1 @@
-{"name":"phx-signer","version":"0.2.0","type":"module","private":true,"engines":{"node":">=20"},
-"scripts":{"test":"node --test test/"},
-"dependencies":{"@ellipsis-labs/rise":"file:ellipsis-labs-rise-0.5.38.tgz","@scure/base":"^2.4.0","@solana/kit":"^8.5.0","@solana/signers":"^8.5.0"}}
+{"name":"phx-signer","version":"0.2.0","type":"module","private":true,"engines":{"node":">=20"},"scripts":{"test":"node --test test/"},"dependencies":{"@ellipsis-labs/rise":"file:ellipsis-labs-rise-0.5.38.tgz","@scure/base":"^2.4.0","@solana/kit":"^8.5.0","@solana/signers":"^8.5.0","@solana/web3.js":"^1.99.0"}}
