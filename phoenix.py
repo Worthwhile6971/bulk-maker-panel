@@ -27,7 +27,7 @@ def trading_enabled(): return os.environ.get("PHOENIX_TRADING_ENABLED") == "1"
 def gate():
     h = halt()
     return {"live_enabled": trading_enabled() and not h, "flag": trading_enabled(), "halt": h,
-            "signer": False, "note": "live Phoenix submit not implemented in this build (dry-run previews only)"}
+            "signer": signer_available(), "note": "live submit needs PHOENIX_HALT=0, PHOENIX_TRADING_ENABLED=1, approval, and sub0 authority == delegate"}
 def markets():
     out = []
     for m in _get("/v1/view/exchange/markets", 60):
@@ -84,14 +84,48 @@ def preview(sym, side, size_usd, px, sl, tp=None):
             "price": px, "tick": tick, "qty": round(qty, 10), "notional": round(qty * px, 4), "sl": sl, "sl_exit": "reduce-only stop",
             "tp": tp, "r_multiple": r, "risk_usd": round(risk, 4), "maker_fee_usd": round(qty * px * (m.get("makerFee") or 0), 4),
             "book": bk, "gate": g, "warn": warn}
+# ---- signer sidecar (Node, 127.0.0.1, random per-process token). Key only via env PHOENIX_DELEGATE_KEY. ----
+import secrets, shutil, subprocess, threading
+HERE = os.path.dirname(os.path.abspath(__file__)); SDIR = os.path.join(HERE, "phx-signer")
+SPORT = int(os.environ.get("PHX_SIGNER_PORT", "8799")); STOK = secrets.token_hex(24); _SP = [None]; _SL = threading.Lock()
+SAFE_ENV = ("PATH", "HOME", "PHOENIX_DELEGATE_KEY", "PHOENIX_RPC_URL", "PHOENIX_API", "PHOENIX_HALT", "PHOENIX_TRADING_ENABLED")
+def signer_available():
+    return bool(shutil.which("node")) and os.path.isdir(os.path.join(SDIR, "node_modules")) and bool(os.environ.get("PHOENIX_DELEGATE_KEY"))
+def _signer():
+    with _SL:
+        if _SP[0] and _SP[0].poll() is None: return
+        if not signer_available(): raise PermissionError("Phoenix signer unavailable (needs node, phx-signer/node_modules and PHOENIX_DELEGATE_KEY)")
+        env = {k: os.environ[k] for k in SAFE_ENV if k in os.environ}   # owner key never passed
+        env.update(PHX_SIGNER_TOKEN=STOK, PHX_SIGNER_PORT=str(SPORT))
+        _SP[0] = subprocess.Popen(["node", "signer.mjs"], cwd=SDIR, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(40):
+        try: requests.get("http://127.0.0.1:%d/health" % SPORT, headers={"x-signer-token": STOK}, timeout=2); return
+        except Exception: time.sleep(0.25)
+    raise RuntimeError("signer did not start")
+def signer_call(path, body=None):
+    _signer(); h = {"x-signer-token": STOK}
+    r = requests.post("http://127.0.0.1:%d%s" % (SPORT, path), json=body, headers=h, timeout=60) if body is not None else requests.get("http://127.0.0.1:%d%s" % (SPORT, path), headers=h, timeout=30)
+    d = r.json()
+    if r.status_code != 200: raise ValueError(d.get("error", "signer error"))
+    return d
+def signer_health():
+    if not signer_available(): return {"available": False, "node": bool(shutil.which("node")), "deps": os.path.isdir(os.path.join(SDIR, "node_modules")), "key": bool(os.environ.get("PHOENIX_DELEGATE_KEY"))}
+    return dict(signer_call("/health"), available=True)
+def _order(body, mode):
+    b = {k: body.get(k) for k in ("kind", "symbol", "side", "price", "size", "sl", "percent", "orders", "hypothetical")}
+    b["kind"] = b["kind"] or "open"; b["mode"] = mode
+    if mode == "send": b["approved"] = body.get("approved") is True
+    return b
+def simulate(body):
+    """Build + delegate-sign + simulateTransaction. Never broadcasts."""
+    return signer_call("/order", _order(body, "simulate"))
 def submit(body):
-    """Approval-gated live submit. Always refused in this build."""
+    """Approval-gated live submit: panel gates here, then signer re-checks env gates + on-chain authority."""
     g = gate()
     if body.get("approved") is not True: raise ValueError("explicit approval required (approved: true)")
     if g["halt"]: raise PermissionError("Phoenix halted: %s" % g["halt"])
     if not g["flag"]: raise PermissionError("Phoenix live trading disabled (PHOENIX_TRADING_ENABLED not set)")
-    raise PermissionError("Phoenix live signer not deployed in this build; preview only")
+    if (body.get("kind") or "open") == "open" and body.get("sl") in (None, ""): raise ValueError("stop-loss is required")
+    return signer_call("/order", _order(body, "send"))
 def cancel(body):
-    g = gate()
-    if g["halt"] or not g["flag"]: raise PermissionError("Phoenix live actions disabled")
-    raise PermissionError("Phoenix live signer not deployed in this build")
+    return submit(dict(body, kind="cancel"))

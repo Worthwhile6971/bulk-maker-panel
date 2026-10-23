@@ -867,12 +867,14 @@ class H(BaseHTTPRequestHandler):
 import phoenix as PHX
 def phx_get(op, q):
     if op == "gate": return PHX.gate()
+    if op == "signer": return PHX.signer_health()
     if op == "markets": return {"markets": PHX.markets(), "gate": PHX.gate()}
     if op == "account": return PHX.account()
     if op == "book": return PHX.book(q["symbol"])
     if op == "preview": return PHX.preview(q["symbol"], q.get("side", "long"), q.get("size", "50"), q.get("px"), q.get("sl"), q.get("tp"))
     raise KeyError("unknown phoenix op " + op)
 def phx_post(op, body):
+    if op == "simulate": return PHX.simulate(body)
     if op == "submit": return PHX.submit(body)
     if op == "cancel": return PHX.cancel(body)
     raise KeyError("unknown phoenix op " + op)

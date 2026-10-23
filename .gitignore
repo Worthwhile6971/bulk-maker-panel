@@ -9,3 +9,4 @@ risk_equity_*.json
 HALT_*
 ALERTS_*.log
 *.tmp
+phx-signer/node_modules/

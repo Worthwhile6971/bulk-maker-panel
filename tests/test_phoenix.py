@@ -27,8 +27,13 @@ class T(unittest.TestCase):
     def test_submit_always_refused(self):
         os.environ["PHOENIX_TRADING_ENABLED"] = "1"; os.environ["PHOENIX_HALT"] = "0"
         with self.assertRaises(ValueError): X.submit({"approved": False})
-        with self.assertRaises(PermissionError): X.submit({"approved": True})
-        with self.assertRaises(PermissionError): X.cancel({})
+        X.signer_available = lambda: False
+        with self.assertRaises(PermissionError): X.submit({"approved": True, "sl": 1})   # no signer -> refused
+        os.environ.pop("PHOENIX_HALT")
+        with self.assertRaises(PermissionError): X.submit({"approved": True, "sl": 1})   # halt default on
+        with self.assertRaises(PermissionError): X.cancel({"approved": True})
+    def test_owner_key_never_passed_to_signer(self):
+        self.assertNotIn("PHOENIX_TRADER_PRIVATE_KEY", X.SAFE_ENV)
     def test_no_signing_code(self):
         src = open(X.__file__).read()
         for bad in ("sendTransaction", "PRIVATE_KEY", "secret_key", "Keypair"): self.assertNotIn(bad, src)

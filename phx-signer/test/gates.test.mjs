@@ -1,0 +1,14 @@
+import test from "node:test"; import assert from "node:assert/strict";
+import { envGate, validateRequest, postOnlyNoCross, authorityGate, DELEGATE, OWNER } from "../gates.mjs";
+import { readFileSync } from "node:fs";
+const o = { kind: "open", mode: "simulate", symbol: "SOL", side: "long", price: 100, size: 0.1, sl: 95 };
+test("default env refuses live", () => { const g = envGate({}); assert.equal(g.ok, false); assert.equal(g.reasons.length, 3); });
+test("flag without halt clear refuses", () => assert.equal(envGate({ PHOENIX_TRADING_ENABLED: "1", PHOENIX_DELEGATE_KEY: "x" }).ok, false));
+test("owner key in env refuses", () => assert.equal(envGate({ PHOENIX_HALT: "0", PHOENIX_TRADING_ENABLED: "1", PHOENIX_DELEGATE_KEY: "x", PHOENIX_TRADER_PRIVATE_KEY: "y" }).ok, false));
+test("all gates open", () => assert.equal(envGate({ PHOENIX_HALT: "0", PHOENIX_TRADING_ENABLED: "1", PHOENIX_DELEGATE_KEY: "x" }).ok, true));
+test("send requires approved true", () => { assert.throws(() => validateRequest({ ...o, mode: "send" })); assert.throws(() => validateRequest({ ...o, mode: "send", approved: "yes" })); assert.ok(validateRequest({ ...o, mode: "send", approved: true })); });
+test("sl required and correct side", () => { assert.throws(() => validateRequest({ ...o, sl: undefined })); assert.throws(() => validateRequest({ ...o, sl: 101 })); assert.throws(() => validateRequest({ ...o, side: "short", sl: 99 })); });
+test("taker kinds refused", () => { for (const k of ["market", "ioc", "fok", "slide", "takerOk"]) assert.throws(() => validateRequest({ ...o, [k]: true })); assert.throws(() => validateRequest({ ...o, kind: "withdraw" })); assert.throws(() => validateRequest({ ...o, kind: "market" })); });
+test("post-only cross refused", () => { assert.throws(() => postOnlyNoCross(true, 100.1, 100, 100.1)); assert.throws(() => postOnlyNoCross(false, 100, 100, 100.1)); postOnlyNoCross(true, 100, 100, 100.1); });
+test("authority gate", () => { assert.throws(() => authorityGate({ authority: OWNER, positionAuthority: "BJAi8V8SbqayXZrfpqeEDxTULnvyzkYfJMPRezAp7mC5" })); authorityGate({ authority: OWNER, positionAuthority: DELEGATE }); });
+test("signer source never references owner private key", () => { const s = readFileSync(new URL("../signer.mjs", import.meta.url), "utf8"); assert.ok(!s.includes("PHOENIX_TRADER_PRIVATE_KEY")); });
